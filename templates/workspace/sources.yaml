@@ -1,0 +1,17 @@
+workspace: "{{WORKSPACE_NAME}}"
+
+sources:
+  # jira:
+  #   enabled: false
+  #   project_keys: []
+  # github:
+  #   enabled: false
+  #   repos: []
+  # gmail:
+  #   enabled: false
+  #   query: ""
+  # drive:
+  #   enabled: false
+  #   folder_ids: []
+  # calendar:
+  #   enabled: false

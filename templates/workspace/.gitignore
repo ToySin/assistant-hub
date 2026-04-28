@@ -1,0 +1,27 @@
+# Secrets / local config
+.env
+.env.local
+*.local
+
+# Raw DB files (sync via export, not binary)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+neo4j-data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs
+*.log
+logs/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
