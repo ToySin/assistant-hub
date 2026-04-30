@@ -85,3 +85,16 @@ def _read_jsonl(path: Path):
             line = line.strip()
             if line:
                 yield json.loads(line)
+
+
+def main() -> None:
+    """Dump the active workspace's graph to its exports/graph/ dir."""
+    from graph import builder
+
+    db = builder.connect()
+    out = export(db)
+    print(f"exported to {out}")
+
+
+if __name__ == "__main__":
+    main()
