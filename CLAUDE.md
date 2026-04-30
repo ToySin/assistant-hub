@@ -27,6 +27,7 @@ name). Workspaces live at `~/repositories/assisthub-ws-<name>/`.
 | `library/sources/{jira,github,github_issues}.py` | Per-source ETL — pull + transform + load |
 | `library/sources/run.py` | ETL orchestrator — `python -m library.sources.run` |
 | `library/briefing.py` | Briefing data layer — `python -m library.briefing` |
+| `library/enrichment.py` | L2 concept extraction via Claude — `python -m library.enrichment` (needs `ANTHROPIC_API_KEY`) |
 | `graph/schema.surql` | SurrealDB schema (Issue is unified across sources) |
 | `graph/builder.py` | Connection + UPSERT helpers + `relate()` |
 | `graph/sync.py` | jsonl export/import (cross-laptop sync target) |
