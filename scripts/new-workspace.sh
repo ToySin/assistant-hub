@@ -87,6 +87,11 @@ find "$TARGET_DIR" -type f \( -name '*.md' -o -name '*.yaml' \) -print0 \
 echo "==> Initializing git"
 cd "$TARGET_DIR"
 git init -q -b main
+
+# Install secret-blocking hooks before the first commit so they cover
+# everything from the start.
+"$HUB_ROOT/scripts/install-hooks.sh" "$TARGET_DIR" >/dev/null
+
 git add .
 git commit -q -m "Initial commit — assisthub-ws-$NAME"
 

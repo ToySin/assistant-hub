@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Belt-and-suspenders: scan every new commit being pushed for secrets, in
+# case pre-commit was bypassed or missing when the commit was made.
+#
+# Reads the standard pre-push stdin format:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# For each ref, scans the commit range (remote..local) using git log -p.
+
+set -euo pipefail
+
+ZERO=0000000000000000000000000000000000000000
+
+BLOCKED_NAMES=(
+    '^\.env$'
+    '^\.env\..+$'
+    '\.pem$'
+    '\.key$'
+    '\.p12$'
+    '\.pfx$'
+    '^id_rsa($|\.)'
+    '^id_ed25519($|\.)'
+    '^id_ecdsa($|\.)'
+)
+ALLOWED_NAME_SUFFIX_RE='\.(example|sample|template)$'
+
+SECRET_PATTERNS=(
+    'ghp_[A-Za-z0-9]{30,}'
+    'gho_[A-Za-z0-9]{30,}'
+    'ghu_[A-Za-z0-9]{30,}'
+    'ghs_[A-Za-z0-9]{30,}'
+    'github_pat_[A-Za-z0-9_]{50,}'
+    'sk-ant-[A-Za-z0-9_-]{50,}'
+    '\bsk-[A-Za-z0-9]{40,}'
+    'xox[bpsr]-[A-Za-z0-9-]{20,}'
+    'AKIA[0-9A-Z]{16}'
+    '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'
+)
+
+violations=()
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [[ "$local_sha" == "$ZERO" ]] && continue
+    if [[ "$remote_sha" == "$ZERO" ]]; then
+        # New branch: scan all commits reachable from local that are not on any other ref
+        range="$local_sha"
+        rev_args=("$range" "--not" "--branches=*" "--tags=*")
+        # Fall back: just scan the new commits since merge-base with HEAD's tracked default
+        commits=$(git rev-list "$local_sha" --not --remotes 2>/dev/null || git rev-list "$local_sha" -n 50)
+    else
+        commits=$(git rev-list "$remote_sha..$local_sha")
+    fi
+
+    for commit in $commits; do
+        # Filenames added/modified in this commit
+        while IFS=$'\t' read -r status path; do
+            [[ -z "${path:-}" ]] && continue
+            base=$(basename -- "$path")
+            if [[ "$base" =~ $ALLOWED_NAME_SUFFIX_RE ]]; then
+                continue
+            fi
+            for pat in "${BLOCKED_NAMES[@]}"; do
+                if [[ "$base" =~ $pat ]]; then
+                    violations+=("$commit: $path  (blocked filename)")
+                    continue 2
+                fi
+            done
+        done < <(git show --name-status --format= "$commit" | awk '$1 ~ /^[ACMR]/ {print $1"\t"$NF}')
+
+        # Content patterns in this commit's added lines
+        added=$(git show --format= "$commit" | grep -E '^\+[^+]' || true)
+        [[ -z "$added" ]] && continue
+        for pat in "${SECRET_PATTERNS[@]}"; do
+            if echo "$added" | grep -E -q "$pat"; then
+                violations+=("$commit: content matches /$pat/")
+            fi
+        done
+    done
+done
+
+if [[ ${#violations[@]} -gt 0 ]]; then
+    {
+        echo "pre-push BLOCKED — possible secret content in commits being pushed:"
+        printf '  - %s\n' "${violations[@]}"
+        echo
+        echo "Inspect with: git show <sha>"
+        echo "If false positive, override with: git push --no-verify"
+        echo "If real: do NOT push. Rewrite history (git reset / git filter-repo) to remove."
+    } >&2
+    exit 1
+fi
