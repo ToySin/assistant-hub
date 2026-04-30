@@ -1,0 +1,46 @@
+-- Workspace graph schema.
+-- Layer 1: structured ETL (typed nodes from Jira/GitHub APIs)
+-- Layer 2: LLM enrichment (open ontology with provenance on edges)
+--
+-- Idempotent: safe to apply on an existing DB.
+
+DEFINE TABLE IF NOT EXISTS Person SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON Person TYPE string;
+DEFINE INDEX IF NOT EXISTS person_name ON Person FIELDS name UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS JiraIssue SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS key       ON JiraIssue TYPE string;
+DEFINE FIELD IF NOT EXISTS title     ON JiraIssue TYPE string;
+DEFINE FIELD IF NOT EXISTS status    ON JiraIssue TYPE string;
+DEFINE FIELD IF NOT EXISTS body      ON JiraIssue TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS embedding ON JiraIssue TYPE option<array<float>>;
+DEFINE INDEX IF NOT EXISTS issue_key ON JiraIssue FIELDS key UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS GitHubPR SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS uid   ON GitHubPR TYPE string;
+DEFINE FIELD IF NOT EXISTS title ON GitHubPR TYPE string;
+DEFINE FIELD IF NOT EXISTS state ON GitHubPR TYPE string;
+DEFINE INDEX IF NOT EXISTS pr_uid ON GitHubPR FIELDS uid UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS Project SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS key  ON Project TYPE string;
+DEFINE FIELD IF NOT EXISTS name ON Project TYPE string;
+DEFINE INDEX IF NOT EXISTS project_key ON Project FIELDS key UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS Concept SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON Concept TYPE string;
+DEFINE INDEX IF NOT EXISTS concept_name ON Concept FIELDS name UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS assigned_to TYPE RELATION FROM Person    TO JiraIssue SCHEMAFULL;
+DEFINE TABLE IF NOT EXISTS authored    TYPE RELATION FROM Person    TO GitHubPR  SCHEMAFULL;
+DEFINE TABLE IF NOT EXISTS implements  TYPE RELATION FROM GitHubPR  TO JiraIssue SCHEMAFULL;
+DEFINE TABLE IF NOT EXISTS belongs_to  TYPE RELATION FROM JiraIssue TO Project   SCHEMAFULL;
+DEFINE TABLE IF NOT EXISTS blocked_by  TYPE RELATION FROM JiraIssue TO JiraIssue SCHEMAFULL;
+
+DEFINE TABLE IF NOT EXISTS mentions    TYPE RELATION FROM JiraIssue TO Concept   SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS confidence   ON mentions TYPE float;
+DEFINE FIELD IF NOT EXISTS provenance   ON mentions TYPE string;
+DEFINE FIELD IF NOT EXISTS extracted_by ON mentions TYPE string;
+
+DEFINE INDEX IF NOT EXISTS issue_embedding_hnsw ON JiraIssue
+    FIELDS embedding HNSW DIMENSION 8 DIST COSINE TYPE F32;
