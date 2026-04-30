@@ -22,8 +22,13 @@ from graph import builder
 from library.sources.config import _load_dotenv
 from library.workspace import get_workspace_path
 
-MODEL = "claude-haiku-4-5-20251001"
-EXTRACTOR_VERSION = f"library.enrichment-{MODEL}"
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _model() -> str:
+    """Allow overriding via env when extracting noisy / domain-heavy text.
+    Default is haiku-4-5 — the work is structured extraction, not reasoning."""
+    return os.environ.get("ASSISTHUB_ENRICHMENT_MODEL", DEFAULT_MODEL)
 
 SYSTEM_PROMPT = """You extract key concepts from work-tracking issue bodies.
 
@@ -67,6 +72,8 @@ def enrich(workspace: str | None = None) -> Stats:
         )
 
     client = Anthropic(api_key=api_key)
+    model = _model()
+    extracted_by = f"library.enrichment-{model}"
     db = builder.connect(workspace)
 
     issues = db.query(
@@ -80,7 +87,7 @@ def enrich(workspace: str | None = None) -> Stats:
         if not text:
             continue
         try:
-            concepts = _extract_concepts(client, text)
+            concepts = _extract_concepts(client, model, text)
         except Exception as exc:  # noqa: BLE001
             print(f"[enrichment] skip {issue['external_key']}: {exc}")
             continue
@@ -94,7 +101,7 @@ def enrich(workspace: str | None = None) -> Stats:
                 db, issue["id"], "mentions", concept_id,
                 confidence=float(concept.get("confidence", 0.7)),
                 provenance="extracted",
-                extracted_by=EXTRACTOR_VERSION,
+                extracted_by=extracted_by,
             )
             stats.concepts_extracted += 1
             stats.edges_created += 1
@@ -102,9 +109,9 @@ def enrich(workspace: str | None = None) -> Stats:
     return stats
 
 
-def _extract_concepts(client: Anthropic, text: str) -> list[dict]:
+def _extract_concepts(client: Anthropic, model: str, text: str) -> list[dict]:
     resp = client.messages.create(
-        model=MODEL,
+        model=model,
         max_tokens=1024,
         system=[
             {
