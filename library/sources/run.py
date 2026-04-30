@@ -17,11 +17,13 @@ import sys
 from graph import builder
 from library.sources import config as source_config
 from library.sources import github as github_source
+from library.sources import github_issues as github_issues_source
 from library.sources import jira as jira_source
 
 DISPATCH = {
     "jira": jira_source.sync,
     "github": github_source.sync,
+    "github_issues": github_issues_source.sync,
 }
 
 

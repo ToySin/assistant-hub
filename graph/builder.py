@@ -52,33 +52,46 @@ def upsert_person(db: Surreal, name: str) -> RecordID:
     return _first_id(res)
 
 
-def upsert_jira_issue(
+def _issue_thing_id(source: str, external_key: str) -> str:
+    return _slugify(f"{source}_{external_key}")
+
+
+def upsert_issue(
     db: Surreal,
-    key: str,
+    source: str,
+    external_key: str,
     title: str,
     status: str,
     body: str | None = None,
     embedding: list[float] | None = None,
 ) -> RecordID:
+    """Upsert a tracked work item from any source. `source` is the origin
+    system ('jira' or 'github'); `external_key` is that system's native
+    identifier (e.g. 'SYS-123' or 'ToySin/repo#42'). The pair is unique."""
+    thing_id = _issue_thing_id(source, external_key)
     res = db.query(
         """
-        UPSERT type::thing('JiraIssue', $key)
-        SET key = $key, title = $title, status = $status,
+        UPSERT type::thing('Issue', $thing_id)
+        SET source = $source, external_key = $external_key,
+            title = $title, status = $status,
             body = $body, embedding = $embedding
         RETURN id;
         """,
-        {"key": key, "title": title, "status": status,
-         "body": body, "embedding": embedding},
+        {"thing_id": thing_id, "source": source, "external_key": external_key,
+         "title": title, "status": status, "body": body, "embedding": embedding},
     )
     return _first_id(res)
 
 
-def ensure_jira_issue(db: Surreal, key: str) -> RecordID:
-    """Return id of an existing JiraIssue, or create a placeholder stub
-    if none exists. Idempotent and does not overwrite real data."""
+def ensure_issue(db: Surreal, source: str, external_key: str) -> RecordID:
+    """Return id of an existing Issue, or create a placeholder stub if
+    none exists. Used when an issue is referenced before it has been
+    fetched (e.g. a PR mentions a Jira key we have not loaded yet).
+    Does not overwrite real data."""
+    thing_id = _issue_thing_id(source, external_key)
     existing = db.query(
-        "SELECT id FROM type::thing('JiraIssue', $key);",
-        {"key": key},
+        "SELECT id FROM type::thing('Issue', $thing_id);",
+        {"thing_id": thing_id},
     )
     if isinstance(existing, list) and existing:
         first = existing[0]
@@ -88,11 +101,12 @@ def ensure_jira_issue(db: Surreal, key: str) -> RecordID:
             return first["id"]
     res = db.query(
         """
-        CREATE type::thing('JiraIssue', $key)
-        SET key = $key, title = '(stub)', status = 'Unknown'
+        CREATE type::thing('Issue', $thing_id)
+        SET source = $source, external_key = $external_key,
+            title = '(stub)', status = 'Unknown'
         RETURN id;
         """,
-        {"key": key},
+        {"thing_id": thing_id, "source": source, "external_key": external_key},
     )
     return _first_id(res)
 

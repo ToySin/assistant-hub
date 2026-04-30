@@ -87,7 +87,7 @@ def _load_prs(db: Surreal, repo: str, prs: list[dict], include_drafts: bool) -> 
 
         text = f"{pr.get('title') or ''}\n{pr.get('body') or ''}"
         for jira_key in extract_jira_keys(text):
-            issue_id = builder.ensure_jira_issue(db, key=jira_key)
+            issue_id = builder.ensure_issue(db, source="jira", external_key=jira_key)
             builder.relate(db, pr_id, "implements", issue_id)
             stats.implements += 1
             stats.edges += 1

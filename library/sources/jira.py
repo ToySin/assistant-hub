@@ -89,9 +89,10 @@ def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
         if project_key:
             builder.upsert_project(db, key=project_key, name=project_name)
 
-        issue_id = builder.upsert_jira_issue(
+        issue_id = builder.upsert_issue(
             db,
-            key=key,
+            source="jira",
+            external_key=key,
             title=_safe(f, "summary"),
             status=_safe(f, "status", "name"),
             body=_extract_description(f.get("description")),
@@ -119,12 +120,12 @@ def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
             inward = _safe(link, "inwardIssue", "key")
             if outward:
                 # Current issue blocks `outward`: outward is blocked_by current.
-                stub = builder.ensure_jira_issue(db, key=outward)
+                stub = builder.ensure_issue(db, source="jira", external_key=outward)
                 builder.relate(db, stub, "blocked_by", issue_id)
                 stats.edges += 1
             if inward:
                 # Current issue is blocked by `inward`.
-                stub = builder.ensure_jira_issue(db, key=inward)
+                stub = builder.ensure_issue(db, source="jira", external_key=inward)
                 builder.relate(db, issue_id, "blocked_by", stub)
                 stats.edges += 1
 
