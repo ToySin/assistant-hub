@@ -1,17 +1,95 @@
 workspace: "{{WORKSPACE_NAME}}"
 
+# Data sources for this workspace. All sources start disabled — flip
+# `enabled: true` and fill required fields to include them in the graph.
+#
+# Secrets do NOT live in this file. `auth_env` points to an environment
+# variable (set in .env) that holds the credential.
+
 sources:
-  # jira:
-  #   enabled: false
-  #   project_keys: []
-  # github:
-  #   enabled: false
-  #   repos: []
-  # gmail:
-  #   enabled: false
-  #   query: ""
-  # drive:
-  #   enabled: false
-  #   folder_ids: []
-  # calendar:
-  #   enabled: false
+  # === Issue & task tracking ===
+  jira:
+    enabled: false
+    base_url: ""             # https://<org>.atlassian.net
+    auth_env: JIRA_TOKEN     # also reads JIRA_EMAIL
+    project_keys: []         # e.g. ["SYS", "ACS"]
+    jql: ""                  # optional — overrides default project-based query
+  linear:
+    enabled: false
+    auth_env: LINEAR_API_KEY
+    team_keys: []
+  github_issues:
+    enabled: false
+    auth_env: GITHUB_TOKEN
+    repos: []                # owner/repo
+
+  # === Code & PRs ===
+  github:
+    enabled: false
+    auth_env: GITHUB_TOKEN
+    repos: []                # owner/repo
+    include_drafts: false
+  gitlab:
+    enabled: false
+    base_url: ""             # https://gitlab.com or self-hosted
+    auth_env: GITLAB_TOKEN
+    projects: []             # group/project
+  local_repos:
+    enabled: false
+    paths: []                # absolute paths on disk
+
+  # === Communication ===
+  slack:
+    enabled: false
+    auth_env: SLACK_TOKEN
+    channels: []             # channel ids or names
+    include_dms: false
+  gmail:
+    enabled: false
+    auth_env: GOOGLE_OAUTH_TOKEN
+    query: ""                # gmail search syntax, e.g. "from:boss newer_than:7d"
+
+  # === Docs & wikis ===
+  confluence:
+    enabled: false
+    base_url: ""             # https://<org>.atlassian.net/wiki
+    auth_env: CONFLUENCE_TOKEN
+    spaces: []
+  notion:
+    enabled: false
+    auth_env: NOTION_TOKEN
+    database_ids: []
+    page_ids: []
+  gdrive_docs:
+    enabled: false
+    auth_env: GOOGLE_OAUTH_TOKEN
+    folder_ids: []           # only docs under these folders
+
+  # === Calendar ===
+  gcal:
+    enabled: false
+    auth_env: GOOGLE_OAUTH_TOKEN
+    calendar_ids: ["primary"]
+    days_back: 7
+    days_ahead: 14
+
+  # === Notes & reading ===
+  obsidian:
+    enabled: false
+    vault_path: ""           # absolute path
+  markdown_dirs:
+    enabled: false
+    paths: []                # any directories of .md files
+  readwise:
+    enabled: false
+    auth_env: READWISE_TOKEN
+
+  # === Web feeds ===
+  rss:
+    enabled: false
+    feeds: []                # list of feed URLs
+
+  # === Custom HTTP ===
+  http:
+    enabled: false
+    endpoints: []            # [{name, url, auth_env, parser}]

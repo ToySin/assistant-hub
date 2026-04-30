@@ -34,10 +34,11 @@ The script:
 
 ### Step 3. Post-create configuration
 
-Walk the user through:
-1. `cp .env.example .env` and fill credentials (Jira, Google, etc. as relevant)
-2. Edit `sources.yaml` — uncomment and configure data sources for this workspace
-3. (Optional) Add the first project tracker in `projects/`
+1. `cp .env.example .env` so credentials have a place to live.
+2. Run `/configure-sources` (with `ASSISTHUB_WORKSPACE=<name>` set) to
+   walk through enabling data sources interactively. The skill will list
+   exactly which env vars to add to `.env` based on what was enabled.
+3. (Optional) Add the first project tracker in `projects/`.
 
 ### Step 4. Confirm
 
