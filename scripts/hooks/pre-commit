@@ -61,7 +61,7 @@ for f in "${STAGED[@]}"; do
     added=$(git diff --cached -U0 -- "$f" | grep -E '^\+[^+]' || true)
     [[ -z "$added" ]] && continue
     for pat in "${SECRET_PATTERNS[@]}"; do
-        if echo "$added" | grep -E -q "$pat"; then
+        if echo "$added" | grep -E -q -- "$pat"; then
             violations+=("$f  (content matches /$pat/)")
             break
         fi

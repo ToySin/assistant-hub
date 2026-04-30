@@ -70,7 +70,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         added=$(git show --format= "$commit" | grep -E '^\+[^+]' || true)
         [[ -z "$added" ]] && continue
         for pat in "${SECRET_PATTERNS[@]}"; do
-            if echo "$added" | grep -E -q "$pat"; then
+            if echo "$added" | grep -E -q -- "$pat"; then
                 violations+=("$commit: content matches /$pat/")
             fi
         done
