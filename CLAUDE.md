@@ -29,6 +29,7 @@ assisthub list           # list workspaces (* marks active)
 | [`act.md`](./act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
 | [`search.md`](./search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
 | [`monitor.md`](./monitor.md) | Event timeline (open/close/title/status) + replay cursor | After `/briefing`, or to inspect what changed |
+| [`runbooks.md`](./runbooks.md) | Self-reinforcing recipes — pattern → steps with promote/demote | After resolving a recurring event by hand |
 
 ## Code
 
@@ -42,6 +43,7 @@ assisthub list           # list workspaces (* marks active)
 | `library/act.py` | Act data layer (P0–P3 ranking) — `python -m library.act` |
 | `library/search.py` | SQLite FTS5 sidecar — `python -m library.search "<query>"` |
 | `library/monitor.py` | Event store (timeline + replay cursor) — `python -m library.monitor timeline` |
+| `library/runbooks.py` | Runbook store + lifecycle — `python -m library.runbooks list` |
 | `library/sync_state.py` | Per-(source, scope) last-sync timestamps backing delta ETL |
 | `library/enrichment.py` | L2 concept extraction via Claude — `python -m library.enrichment` (needs `ANTHROPIC_API_KEY`) |
 | `graph/schema.surql` | SurrealDB schema (Issue is unified across sources) |
