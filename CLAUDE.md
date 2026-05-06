@@ -26,6 +26,7 @@ assisthub list           # list workspaces (* marks active)
 | [`new-workspace.md`](./new-workspace.md) | Create a new workspace repo (local + private GitHub) | Bootstrap a new context (work / personal / per-project) |
 | [`configure-sources.md`](./configure-sources.md) | Interactively fill the active workspace's `sources.yaml` | After `/new-workspace`, or to add/modify data sources later |
 | [`briefing.md`](./briefing.md) | Session-start summary (open issues, PRs, blockers) | Begin of session, or when re-orienting mid-session |
+| [`act.md`](./act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
 
 ## Code
 
@@ -36,6 +37,8 @@ assisthub list           # list workspaces (* marks active)
 | `library/sources/{jira,github,github_issues}.py` | Per-source ETL — pull + transform + load |
 | `library/sources/run.py` | ETL orchestrator — `python -m library.sources.run` |
 | `library/briefing.py` | Briefing data layer — `python -m library.briefing` |
+| `library/act.py` | Act data layer (P0–P3 ranking) — `python -m library.act` |
+| `library/sync_state.py` | Per-(source, scope) last-sync timestamps backing delta ETL |
 | `library/enrichment.py` | L2 concept extraction via Claude — `python -m library.enrichment` (needs `ANTHROPIC_API_KEY`) |
 | `graph/schema.surql` | SurrealDB schema (Issue is unified across sources) |
 | `graph/builder.py` | Connection + UPSERT helpers + `relate()` |
