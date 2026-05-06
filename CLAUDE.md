@@ -49,6 +49,7 @@ assisthub list           # list workspaces (* marks active)
 
 | Path | Role |
 |------|------|
+| `scripts/setup.sh` | Bootstrap a fresh laptop (clone + hooks + venv + session restore) |
 | `scripts/assisthub` | Active-workspace switcher CLI (use / current / list / unset) |
 | `scripts/new-workspace.sh` | Workspace bootstrap (called by `/new-workspace`) |
 | `scripts/install-hooks.sh` | Copy git hooks into a target repo |
@@ -59,18 +60,23 @@ assisthub list           # list workspaces (* marks active)
 ## Common workflows
 
 ```bash
+# Fresh-laptop bootstrap (clone + hooks + venv + session restore)
+./scripts/setup.sh <workspace>
+
 # New workspace
 ./scripts/new-workspace.sh <name>            # then /configure-sources
 
 # Refresh graph from configured sources
-ASSISTHUB_WORKSPACE=<name> python -m library.sources.run
+python -m library.sources.run                # delta sync (uses sync_state)
+python -m library.sources.run --full         # ignore sync_state, re-fetch all
 
-# Briefing
-ASSISTHUB_WORKSPACE=<name> python -m library.briefing
+# Briefing + Act
+python -m library.briefing
+python -m library.act
 
 # Cross-laptop session continuity
 ./scripts/sync-session.sh                    # before leaving laptop A
-./scripts/restore-session.sh                 # after cloning on laptop B
+./scripts/restore-session.sh                 # after cloning on laptop B (setup.sh runs this)
 ```
 
 ## Conventions
