@@ -15,12 +15,15 @@ import os
 from dataclasses import dataclass
 
 import requests
-from surrealdb import Surreal
+from surrealdb import RecordID, Surreal
 
 from graph import builder
+from library import sync_state
 
-DEFAULT_FIELDS = "summary,status,assignee,reporter,project,issuelinks,priority,issuetype,description"
-DEFAULT_JQL = "assignee = currentUser() ORDER BY updated DESC"
+SOURCE_NAME = "jira"
+
+DEFAULT_FIELDS = "summary,status,assignee,reporter,project,issuelinks,priority,issuetype,description,updated"
+DEFAULT_JQL = "assignee = currentUser()"
 PAGE_SIZE = 50
 
 
@@ -41,17 +44,42 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
         raise ValueError("jira: JIRA_EMAIL not set in .env")
 
     project_keys = settings.get("project_keys") or []
-    jql = settings.get("jql") or _default_jql(project_keys)
+    base_jql = settings.get("jql") or _default_jql(project_keys)
+    full = bool(settings.get("full"))
 
+    scope = ",".join(sorted(project_keys)) or "_all"
+    since = None if full else sync_state.get(SOURCE_NAME, scope=scope)
+    started = sync_state.now_iso()
+
+    jql = _add_delta(base_jql, since)
     issues = _fetch_issues(base_url, email, auth, jql)
-    return _load_issues(db, issues)
+    stats = _load_issues(db, issues)
+    sync_state.set_(SOURCE_NAME, scope=scope, ts=started)
+    return stats
 
 
 def _default_jql(project_keys: list[str]) -> str:
     if not project_keys:
         return DEFAULT_JQL
     keys = ",".join(project_keys)
-    return f"project IN ({keys}) ORDER BY updated DESC"
+    return f"project IN ({keys})"
+
+
+def _add_delta(jql: str, since: str | None) -> str:
+    """Wrap user JQL with `updated >= "<since>"` and a stable ORDER BY.
+
+    JQL `updated` accepts ISO timestamps. We append rather than parse the
+    user's JQL so any ORDER BY / extra clauses they wrote stay intact.
+    """
+    parts = []
+    if since:
+        parts.append(f'updated >= "{since}"')
+    if jql:
+        parts.append(f"({jql})")
+    body = " AND ".join(parts) if parts else "ORDER BY updated DESC"
+    if "ORDER BY" not in body.upper():
+        body += " ORDER BY updated DESC"
+    return body
 
 
 def _fetch_issues(base_url: str, email: str, token: str, jql: str) -> list[dict]:
@@ -99,6 +127,11 @@ def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
         )
         stats.issues += 1
 
+        # Tear down only edges this sync controls — assignee changes,
+        # blocks-link reshuffles, and project moves all need stale edges
+        # cleared before the new ones land.
+        _teardown_for_issue(db, issue_id)
+
         if project_key:
             project_id = builder.upsert_project(db, key=project_key, name=project_name)
             builder.relate(db, issue_id, "belongs_to", project_id)
@@ -130,6 +163,19 @@ def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
                 stats.edges += 1
 
     return stats
+
+
+def _teardown_for_issue(db: Surreal, issue_id: RecordID) -> None:
+    """Drop edges this issue's sync would re-create.
+
+    `blocked_by` is bidirectional — when X is in the JQL window, this
+    issue's sync writes both `X -> blocked_by -> Y` and `Y -> blocked_by
+    -> X`. Both sides need to clear here so a removed link doesn't leave
+    a stale edge behind.
+    """
+    db.query("DELETE belongs_to WHERE in = $i;", {"i": issue_id})
+    db.query("DELETE assigned_to WHERE out = $i;", {"i": issue_id})
+    db.query("DELETE blocked_by WHERE in = $i OR out = $i;", {"i": issue_id})
 
 
 def _safe(obj: dict | None, *keys: str, default: str = "") -> str:

@@ -155,10 +155,24 @@ def relate(
     dst: RecordID,
     **props: Any,
 ) -> None:
-    """Create an edge `src -> edge -> dst` with optional properties.
+    """Create or update an edge `src -> edge -> dst`.
 
-    Uses CONTENT for property assignment so callers do not build SurrealQL.
+    Idempotent: if an edge with the same (in, out) on this table already
+    exists, it is reused — properties are merged onto it instead of a
+    duplicate edge being created. Without this, re-running ETL on an
+    existing DB silently doubles every edge.
     """
+    existing = db.query(
+        f"SELECT id FROM {edge} WHERE in = $src AND out = $dst LIMIT 1;",
+        {"src": src, "dst": dst},
+    )
+    edge_id = _maybe_id(existing)
+    if edge_id is not None:
+        if props:
+            db.query("UPDATE $eid MERGE $props;",
+                     {"eid": edge_id, "props": props})
+        return
+
     if props:
         db.query(
             f"RELATE $src -> {edge} -> $dst CONTENT $props;",
@@ -169,6 +183,17 @@ def relate(
             f"RELATE $src -> {edge} -> $dst;",
             {"src": src, "dst": dst},
         )
+
+
+def _maybe_id(res: Any) -> RecordID | None:
+    if not isinstance(res, list) or not res:
+        return None
+    first = res[0]
+    if isinstance(first, list) and first:
+        first = first[0]
+    if isinstance(first, dict) and isinstance(first.get("id"), RecordID):
+        return first["id"]
+    return None
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")

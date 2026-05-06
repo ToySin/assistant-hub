@@ -1,12 +1,13 @@
-"""GitHub Issues ETL.
+"""GitHub Issues ETL (delta-aware).
 
 Pulls issues through the `gh` CLI (auth + rate-limit handled by gh).
 Loads each issue as an Issue node with source='github' plus the
-author/assignee as Person nodes, the repo as a Project, and the
-matching belongs_to / assigned_to edges.
+assignees as Person nodes, the repo as a Project, and the matching
+belongs_to / assigned_to edges.
 
-Jira keys parsed out of the issue body produce Issue→Issue mention
-links *via the L2 mentions pipeline* — not handled here.
+On re-run we fetch only issues `updated >= last_sync`. For each
+fetched issue we tear down the edges this sync controls before
+recreating them so assignee/state changes propagate cleanly.
 """
 
 from __future__ import annotations
@@ -16,9 +17,12 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
-from surrealdb import Surreal
+from surrealdb import RecordID, Surreal
 
 from graph import builder
+from library import sync_state
+
+SOURCE_NAME = "github_issues"
 
 
 @dataclass
@@ -37,17 +41,21 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
         raise ValueError("github_issues: at least one repo (owner/repo) is required")
     state = settings.get("state") or "all"
     limit = int(settings.get("limit") or 200)
+    full = bool(settings.get("full"))
 
     stats = SyncStats()
     for repo in repos:
-        issues = _fetch_issues(repo, state=state, limit=limit)
-        merged = _load_issues(db, repo, issues)
-        stats = _merge_stats(stats, merged)
+        since = None if full else sync_state.get(SOURCE_NAME, scope=repo)
+        started = sync_state.now_iso()
+        issues = _fetch_issues(repo, state=state, limit=limit, since=since)
+        stats = _merge(stats, _load_issues(db, repo, issues))
+        sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
     return stats
 
 
-def _fetch_issues(repo: str, *, state: str, limit: int) -> list[dict]:
-    fields = "number,title,body,state,author,assignees,url,labels"
+def _fetch_issues(repo: str, *, state: str, limit: int,
+                  since: str | None = None) -> list[dict]:
+    fields = "number,title,body,state,author,assignees,url,labels,updatedAt"
     cmd = [
         "gh", "issue", "list",
         "--repo", repo,
@@ -55,19 +63,21 @@ def _fetch_issues(repo: str, *, state: str, limit: int) -> list[dict]:
         "--limit", str(limit),
         "--json", fields,
     ]
+    if since:
+        # gh search syntax accepts `updated:>=YYYY-MM-DD`. We trim to date
+        # granularity to match what gh accepts; over-fetching by up to a
+        # day is fine — the load step is idempotent.
+        cmd.extend(["--search", f"updated:>={since[:10]}"])
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return json.loads(res.stdout) or []
 
 
 def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
     stats = SyncStats()
-
     project_id = builder.upsert_project(db, key=repo, name=repo)
 
     for issue in issues:
-        number = issue["number"]
-        external_key = f"{repo}#{number}"
-
+        external_key = f"{repo}#{issue['number']}"
         issue_id = builder.upsert_issue(
             db,
             source="github",
@@ -77,6 +87,11 @@ def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
             body=issue.get("body") or None,
         )
         stats.issues += 1
+
+        # Tear down only the edges this sync controls so assignee/repo
+        # changes propagate cleanly. Other sources' edges (e.g.
+        # PR -implements-> issue) survive untouched.
+        _teardown_for_issue(db, issue_id)
 
         builder.relate(db, issue_id, "belongs_to", project_id)
         stats.edges += 1
@@ -88,11 +103,15 @@ def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
                 builder.relate(db, person_id, "assigned_to", issue_id)
                 stats.people += 1
                 stats.edges += 1
-
     return stats
 
 
-def _merge_stats(a: SyncStats, b: SyncStats) -> SyncStats:
+def _teardown_for_issue(db: Surreal, issue_id: RecordID) -> None:
+    db.query("DELETE belongs_to WHERE in = $i;", {"i": issue_id})
+    db.query("DELETE assigned_to WHERE out = $i;", {"i": issue_id})
+
+
+def _merge(a: SyncStats, b: SyncStats) -> SyncStats:
     return SyncStats(
         issues=a.issues + b.issues,
         people=a.people + b.people,

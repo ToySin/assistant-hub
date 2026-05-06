@@ -8,7 +8,11 @@
 *.db-journal
 *.sqlite
 *.sqlite3
+*.surrealkv/
 neo4j-data/
+
+# Per-machine sync state (regenerable, machine-local)
+sync_state.json
 
 # Python
 __pycache__/

@@ -3,9 +3,14 @@
 Reads the active workspace's sources.yaml, opens the workspace graph
 DB, applies schema, and runs each enabled source's `sync()` in turn.
 
+By default each source pulls only items updated since its last
+recorded sync (see library.sync_state). Pass --full to ignore that
+state and re-fetch everything.
+
 Usage:
-    python -m library.sources.run                  # all enabled sources
+    python -m library.sources.run                  # delta sync, all enabled sources
     python -m library.sources.run --source jira    # one source only
+    python -m library.sources.run --full           # full re-sync (ignore sync_state)
     python -m library.sources.run --dry-run        # config check, no DB writes
 """
 
@@ -32,6 +37,8 @@ def main() -> None:
     parser.add_argument("--source", help="Run only this source (default: all enabled).")
     parser.add_argument("--dry-run", action="store_true",
                         help="Resolve config but do not open the DB or write anything.")
+    parser.add_argument("--full", action="store_true",
+                        help="Ignore sync_state and re-fetch everything.")
     args = parser.parse_args()
 
     enabled = source_config.load()
@@ -57,7 +64,8 @@ def main() -> None:
             print(f"[run] no ETL implemented for source '{source.name}', skipping")
             continue
         try:
-            stats = fn(db, source.settings, source.auth)
+            settings = {**source.settings, "full": args.full}
+            stats = fn(db, settings, source.auth)
             print(f"[run] {source.name}: {stats}")
         except Exception as exc:  # noqa: BLE001 — report and continue
             failures += 1

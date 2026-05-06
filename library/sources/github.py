@@ -16,10 +16,13 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
-from surrealdb import Surreal
+from surrealdb import RecordID, Surreal
 
 from graph import builder
 from graph.link_extractor import extract_jira_keys
+from library import sync_state
+
+SOURCE_NAME = "github"
 
 
 @dataclass
@@ -42,15 +45,20 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
     state = "all"
     include_drafts = bool(settings.get("include_drafts"))
     limit = int(settings.get("limit") or 100)
+    full = bool(settings.get("full"))
 
     stats = SyncStats()
     for repo in repos:
-        prs = _fetch_prs(repo, state=state, limit=limit)
+        since = None if full else sync_state.get(SOURCE_NAME, scope=repo)
+        started = sync_state.now_iso()
+        prs = _fetch_prs(repo, state=state, limit=limit, since=since)
         stats = _merge_stats(stats, _load_prs(db, repo, prs, include_drafts))
+        sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
     return stats
 
 
-def _fetch_prs(repo: str, *, state: str, limit: int) -> list[dict]:
+def _fetch_prs(repo: str, *, state: str, limit: int,
+               since: str | None = None) -> list[dict]:
     fields = "number,title,body,state,isDraft,author,url,headRefName"
     cmd = [
         "gh", "pr", "list",
@@ -59,6 +67,8 @@ def _fetch_prs(repo: str, *, state: str, limit: int) -> list[dict]:
         "--limit", str(limit),
         "--json", fields,
     ]
+    if since:
+        cmd.extend(["--search", f"updated:>={since[:10]}"])
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return json.loads(res.stdout) or []
 
@@ -78,6 +88,11 @@ def _load_prs(db: Surreal, repo: str, prs: list[dict], include_drafts: bool) -> 
         )
         stats.prs += 1
 
+        # Author and Jira refs can change between syncs (rebases, body
+        # edits). Tear down the edges this PR's sync controls before
+        # recreating them so removed refs don't linger.
+        _teardown_for_pr(db, pr_id)
+
         author = (pr.get("author") or {}).get("login")
         if author:
             person_id = builder.upsert_person(db, author)
@@ -92,6 +107,11 @@ def _load_prs(db: Surreal, repo: str, prs: list[dict], include_drafts: bool) -> 
             stats.implements += 1
             stats.edges += 1
     return stats
+
+
+def _teardown_for_pr(db: Surreal, pr_id: RecordID) -> None:
+    db.query("DELETE authored WHERE out = $p;", {"p": pr_id})
+    db.query("DELETE implements WHERE in = $p;", {"p": pr_id})
 
 
 def _merge_stats(a: SyncStats, b: SyncStats) -> SyncStats:
