@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 
 from graph import builder
+from library import monitor
 from library.workspace import get_workspace_path
 
 
@@ -26,6 +27,7 @@ class Briefing:
     open_prs: list[dict] = field(default_factory=list)
     blocked_chains: list[dict] = field(default_factory=list)
     issue_counts_by_source: dict[str, int] = field(default_factory=dict)
+    recent_events: list[dict] = field(default_factory=list)
 
 
 def collect(workspace: str | None = None) -> Briefing:
@@ -53,6 +55,8 @@ def collect(workspace: str | None = None) -> Briefing:
     for row in issue_rows:
         counts[row["source"]] = counts.get(row["source"], 0) + 1
 
+    recent_events = monitor.since_last_replay(limit=30, workspace=workspace)
+
     return Briefing(
         workspace=dashboard.get("workspace") or (workspace or ""),
         dashboard=dashboard,
@@ -60,6 +64,7 @@ def collect(workspace: str | None = None) -> Briefing:
         open_prs=list(pr_rows),
         blocked_chains=[r for r in blocked_rows if r.get("blockers")],
         issue_counts_by_source=counts,
+        recent_events=recent_events,
     )
 
 
@@ -67,6 +72,16 @@ def format_text(b: Briefing) -> str:
     lines: list[str] = []
     lines.append(f"# Briefing — workspace: {b.workspace}")
     lines.append("")
+
+    if b.recent_events:
+        lines.append(f"## Since last replay ({len(b.recent_events)})")
+        for ev in b.recent_events[:15]:
+            lines.append(f"- {ev['ts']}  {ev['kind']}  {ev['subject_key']}")
+        if len(b.recent_events) > 15:
+            lines.append(f"- ... +{len(b.recent_events) - 15} more")
+        lines.append("")
+        lines.append("(Run `python -m library.monitor mark-replayed` once digested.)")
+        lines.append("")
 
     focus = b.dashboard.get("focus") or []
     if focus:

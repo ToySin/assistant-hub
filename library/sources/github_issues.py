@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from surrealdb import RecordID, Surreal
 
 from graph import builder
-from library import search, sync_state
+from library import monitor, search, sync_state
 
 SOURCE_NAME = "github_issues"
 
@@ -79,13 +79,21 @@ def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
 
     for issue in issues:
         external_key = f"{repo}#{issue['number']}"
+        new_title = issue.get("title") or ""
+        new_status = (issue.get("state") or "").lower()
+
+        prior = monitor.read_issue_state(db, "github", external_key)
         issue_id = builder.upsert_issue(
             db,
             source="github",
             external_key=external_key,
-            title=issue.get("title") or "",
-            status=(issue.get("state") or "").lower(),
+            title=new_title,
+            status=new_status,
             body=issue.get("body") or None,
+        )
+        monitor.emit_issue_diff(
+            SOURCE_NAME, repo, external_key, prior,
+            {"title": new_title, "status": new_status},
         )
         stats.issues += 1
 

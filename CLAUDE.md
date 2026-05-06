@@ -28,6 +28,7 @@ assisthub list           # list workspaces (* marks active)
 | [`briefing.md`](./briefing.md) | Session-start summary (open issues, PRs, blockers) | Begin of session, or when re-orienting mid-session |
 | [`act.md`](./act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
 | [`search.md`](./search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
+| [`monitor.md`](./monitor.md) | Event timeline (open/close/title/status) + replay cursor | After `/briefing`, or to inspect what changed |
 
 ## Code
 
@@ -40,6 +41,7 @@ assisthub list           # list workspaces (* marks active)
 | `library/briefing.py` | Briefing data layer — `python -m library.briefing` |
 | `library/act.py` | Act data layer (P0–P3 ranking) — `python -m library.act` |
 | `library/search.py` | SQLite FTS5 sidecar — `python -m library.search "<query>"` |
+| `library/monitor.py` | Event store (timeline + replay cursor) — `python -m library.monitor timeline` |
 | `library/sync_state.py` | Per-(source, scope) last-sync timestamps backing delta ETL |
 | `library/enrichment.py` | L2 concept extraction via Claude — `python -m library.enrichment` (needs `ANTHROPIC_API_KEY`) |
 | `graph/schema.surql` | SurrealDB schema (Issue is unified across sources) |

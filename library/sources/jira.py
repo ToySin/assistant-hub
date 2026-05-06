@@ -18,7 +18,7 @@ import requests
 from surrealdb import RecordID, Surreal
 
 from graph import builder
-from library import search, sync_state
+from library import monitor, search, sync_state
 
 SOURCE_NAME = "jira"
 
@@ -53,7 +53,7 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
 
     jql = _add_delta(base_jql, since)
     issues = _fetch_issues(base_url, email, auth, jql)
-    stats = _load_issues(db, issues)
+    stats = _load_issues(db, issues, scope=scope)
     sync_state.set_(SOURCE_NAME, scope=scope, ts=started)
     return stats
 
@@ -106,7 +106,8 @@ def _fetch_issues(base_url: str, email: str, token: str, jql: str) -> list[dict]
     return out
 
 
-def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
+def _load_issues(db: Surreal, issues: list[dict],
+                 scope: str = "_all") -> SyncStats:
     stats = SyncStats()
     docs: list[dict] = []
     for issue in issues:
@@ -118,13 +119,20 @@ def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
         if project_key:
             builder.upsert_project(db, key=project_key, name=project_name)
 
+        new_title = _safe(f, "summary")
+        new_status = _safe(f, "status", "name")
+        prior = monitor.read_issue_state(db, "jira", key)
         issue_id = builder.upsert_issue(
             db,
             source="jira",
             external_key=key,
-            title=_safe(f, "summary"),
-            status=_safe(f, "status", "name"),
+            title=new_title,
+            status=new_status,
             body=_extract_description(f.get("description")),
+        )
+        monitor.emit_issue_diff(
+            SOURCE_NAME, scope, key, prior,
+            {"title": new_title, "status": new_status},
         )
         stats.issues += 1
 
