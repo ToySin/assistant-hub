@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from surrealdb import RecordID, Surreal
 
 from graph import builder
-from library import sync_state
+from library import search, sync_state
 
 SOURCE_NAME = "github_issues"
 
@@ -75,6 +75,7 @@ def _fetch_issues(repo: str, *, state: str, limit: int,
 def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
     stats = SyncStats()
     project_id = builder.upsert_project(db, key=repo, name=repo)
+    docs: list[dict] = []
 
     for issue in issues:
         external_key = f"{repo}#{issue['number']}"
@@ -103,6 +104,17 @@ def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
                 builder.relate(db, person_id, "assigned_to", issue_id)
                 stats.people += 1
                 stats.edges += 1
+
+        docs.append({
+            "source": "github",
+            "external_id": external_key,
+            "title": issue.get("title") or "",
+            "body": issue.get("body") or "",
+            "author": (issue.get("author") or {}).get("login", ""),
+            "url": issue.get("url", ""),
+        })
+
+    search.upsert_documents(docs)
     return stats
 
 

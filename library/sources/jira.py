@@ -18,7 +18,7 @@ import requests
 from surrealdb import RecordID, Surreal
 
 from graph import builder
-from library import sync_state
+from library import search, sync_state
 
 SOURCE_NAME = "jira"
 
@@ -108,6 +108,7 @@ def _fetch_issues(base_url: str, email: str, token: str, jql: str) -> list[dict]
 
 def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
     stats = SyncStats()
+    docs: list[dict] = []
     for issue in issues:
         f = issue.get("fields", {}) or {}
         key = issue["key"]
@@ -162,6 +163,18 @@ def _load_issues(db: Surreal, issues: list[dict]) -> SyncStats:
                 builder.relate(db, issue_id, "blocked_by", stub)
                 stats.edges += 1
 
+        docs.append({
+            "source": "jira",
+            "external_id": key,
+            "title": _safe(f, "summary"),
+            "body": _extract_description(f.get("description")) or "",
+            "author": _safe(f, "reporter", "displayName"),
+            "url": f"{issue.get('self', '').rsplit('/rest/api/', 1)[0]}/browse/{key}"
+                   if issue.get("self") else "",
+            "updated_at": _safe(f, "updated"),
+        })
+
+    search.upsert_documents(docs)
     return stats
 
 

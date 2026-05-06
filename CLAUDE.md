@@ -27,6 +27,7 @@ assisthub list           # list workspaces (* marks active)
 | [`configure-sources.md`](./configure-sources.md) | Interactively fill the active workspace's `sources.yaml` | After `/new-workspace`, or to add/modify data sources later |
 | [`briefing.md`](./briefing.md) | Session-start summary (open issues, PRs, blockers) | Begin of session, or when re-orienting mid-session |
 | [`act.md`](./act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
+| [`search.md`](./search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
 
 ## Code
 
@@ -38,6 +39,7 @@ assisthub list           # list workspaces (* marks active)
 | `library/sources/run.py` | ETL orchestrator — `python -m library.sources.run` |
 | `library/briefing.py` | Briefing data layer — `python -m library.briefing` |
 | `library/act.py` | Act data layer (P0–P3 ranking) — `python -m library.act` |
+| `library/search.py` | SQLite FTS5 sidecar — `python -m library.search "<query>"` |
 | `library/sync_state.py` | Per-(source, scope) last-sync timestamps backing delta ETL |
 | `library/enrichment.py` | L2 concept extraction via Claude — `python -m library.enrichment` (needs `ANTHROPIC_API_KEY`) |
 | `graph/schema.surql` | SurrealDB schema (Issue is unified across sources) |

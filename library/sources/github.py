@@ -20,7 +20,7 @@ from surrealdb import RecordID, Surreal
 
 from graph import builder
 from graph.link_extractor import extract_jira_keys
-from library import sync_state
+from library import search, sync_state
 
 SOURCE_NAME = "github"
 
@@ -75,6 +75,7 @@ def _fetch_prs(repo: str, *, state: str, limit: int,
 
 def _load_prs(db: Surreal, repo: str, prs: list[dict], include_drafts: bool) -> SyncStats:
     stats = SyncStats()
+    docs: list[dict] = []
     for pr in prs:
         if pr.get("isDraft") and not include_drafts:
             continue
@@ -106,6 +107,17 @@ def _load_prs(db: Surreal, repo: str, prs: list[dict], include_drafts: bool) -> 
             builder.relate(db, pr_id, "implements", issue_id)
             stats.implements += 1
             stats.edges += 1
+
+        docs.append({
+            "source": "github_pr",
+            "external_id": uid,
+            "title": pr.get("title") or "",
+            "body": pr.get("body") or "",
+            "author": author or "",
+            "url": pr.get("url", ""),
+        })
+
+    search.upsert_documents(docs)
     return stats
 
 
