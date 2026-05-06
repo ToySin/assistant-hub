@@ -1,6 +1,9 @@
 """Workspace path resolution.
 
-Active workspace is selected via the `ASSISTHUB_WORKSPACE` environment variable.
+Active workspace resolution order:
+1. `ASSISTHUB_WORKSPACE` environment variable (per-shell override).
+2. Pointer file at `~/.config/assisthub/active` (set by `assisthub use`).
+
 Workspaces live under `ASSISTHUB_LOCATION` (default: `~/repositories`) as
 directories named `assisthub-ws-<name>/`.
 """
@@ -13,6 +16,7 @@ from pathlib import Path
 WORKSPACE_ENV = "ASSISTHUB_WORKSPACE"
 LOCATION_ENV = "ASSISTHUB_LOCATION"
 WORKSPACE_PREFIX = "assisthub-ws-"
+POINTER_PATH = Path.home() / ".config" / "assisthub" / "active"
 
 
 class WorkspaceNotSetError(RuntimeError):
@@ -24,14 +28,19 @@ class WorkspaceNotFoundError(RuntimeError):
 
 
 def get_active_workspace() -> str:
-    """Return the active workspace name from the environment."""
+    """Return the active workspace name. Env var wins so a shell can
+    temporarily switch context without touching the pointer file."""
     name = os.environ.get(WORKSPACE_ENV, "").strip()
-    if not name:
-        raise WorkspaceNotSetError(
-            f"{WORKSPACE_ENV} is not set. Export it to the workspace short name "
-            f"(e.g. `export {WORKSPACE_ENV}=hub-improvement`)."
-        )
-    return name
+    if name:
+        return name
+    if POINTER_PATH.is_file():
+        name = POINTER_PATH.read_text().strip()
+        if name:
+            return name
+    raise WorkspaceNotSetError(
+        f"No active workspace. Set one with `assisthub use <name>` or "
+        f"`export {WORKSPACE_ENV}=<name>`."
+    )
 
 
 def get_workspaces_root() -> Path:

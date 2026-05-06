@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""assisthub — workspace switcher CLI.
+
+  assisthub use <name>    set the active workspace (writes a pointer file)
+  assisthub current       print the active workspace
+  assisthub list          list all workspaces (* marks active)
+  assisthub unset         clear the pointer file
+
+The active workspace is resolved as: ASSISTHUB_WORKSPACE env var first
+(per-shell override), then the pointer file. Any of `python -m
+library.sources.run`, `python -m library.briefing`, etc. picks the
+result up automatically.
+
+Symlink this script onto your PATH so you can invoke it from any cwd:
+    ln -s /home/dongbin/repositories/assistant-hub/scripts/assisthub ~/.local/bin/assisthub
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+HUB = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(HUB))
+
+from library.workspace import (  # noqa: E402
+    POINTER_PATH,
+    WORKSPACE_PREFIX,
+    WorkspaceNotSetError,
+    get_active_workspace,
+    get_workspaces_root,
+)
+
+
+def cmd_use(args: argparse.Namespace) -> int:
+    name = args.name.strip()
+    if not name:
+        print("name is required", file=sys.stderr)
+        return 1
+    target = get_workspaces_root() / f"{WORKSPACE_PREFIX}{name}"
+    if not target.is_dir():
+        print(f"workspace not found: {target}", file=sys.stderr)
+        print("create it first with: scripts/new-workspace.sh", file=sys.stderr)
+        return 1
+    POINTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    POINTER_PATH.write_text(f"{name}\n")
+    print(f"active workspace: {name}")
+    return 0
+
+
+def cmd_current(args: argparse.Namespace) -> int:
+    try:
+        print(get_active_workspace())
+        return 0
+    except WorkspaceNotSetError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    root = get_workspaces_root()
+    if not root.is_dir():
+        return 0
+    try:
+        active = get_active_workspace()
+    except WorkspaceNotSetError:
+        active = None
+    found = False
+    for path in sorted(root.glob(f"{WORKSPACE_PREFIX}*")):
+        if not path.is_dir():
+            continue
+        name = path.name[len(WORKSPACE_PREFIX):]
+        marker = "*" if name == active else " "
+        print(f"{marker} {name}")
+        found = True
+    if not found:
+        print("(no workspaces — create one with scripts/new-workspace.sh)")
+    return 0
+
+
+def cmd_unset(args: argparse.Namespace) -> int:
+    if POINTER_PATH.is_file():
+        POINTER_PATH.unlink()
+    print("pointer cleared")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="assisthub", description="workspace switcher")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_use = sub.add_parser("use", help="set the active workspace")
+    p_use.add_argument("name")
+    p_use.set_defaults(func=cmd_use)
+
+    sub.add_parser("current", help="print the active workspace").set_defaults(func=cmd_current)
+    sub.add_parser("list", help="list workspaces (* marks active)").set_defaults(func=cmd_list)
+    sub.add_parser("unset", help="clear the pointer file").set_defaults(func=cmd_unset)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

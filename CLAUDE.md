@@ -7,8 +7,17 @@ For human-readable docs, see [README.md](./README.md).
 
 ## Active workspace
 
-Most workflows assume `ASSISTHUB_WORKSPACE` is set (the workspace short
-name). Workspaces live at `~/repositories/assisthub-ws-<name>/`.
+Workspaces live at `~/repositories/assisthub-ws-<name>/`. Active workspace
+is resolved as: `ASSISTHUB_WORKSPACE` env var first (per-shell override),
+then the pointer file at `~/.config/assisthub/active`.
+
+```bash
+assisthub use <name>     # set the pointer
+assisthub current        # show active
+assisthub list           # list workspaces (* marks active)
+```
+
+(Symlink `scripts/assisthub` onto your PATH once.)
 
 ## Skills
 
@@ -37,6 +46,7 @@ name). Workspaces live at `~/repositories/assisthub-ws-<name>/`.
 
 | Path | Role |
 |------|------|
+| `scripts/assisthub` | Active-workspace switcher CLI (use / current / list / unset) |
 | `scripts/new-workspace.sh` | Workspace bootstrap (called by `/new-workspace`) |
 | `scripts/install-hooks.sh` | Copy git hooks into a target repo |
 | `scripts/hooks/{pre-commit,pre-push}` | Block secrets / `.env` from being committed or pushed |
