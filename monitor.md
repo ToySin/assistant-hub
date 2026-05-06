@@ -44,6 +44,18 @@ python -m library.monitor stats
 Counts by event kind. Useful for a quick "is the collector firing?"
 check.
 
+### Find runbook gaps
+
+```bash
+python -m library.monitor suggest
+```
+
+Lists `(kind, source)` event groups with **no covering runbook**.
+The first occurrence of a kind is informational; the second is a
+strong signal that the same resolution is about to happen again, so
+the output ends with the exact `runbooks create ...` command to
+capture it.
+
 ## How the events are produced
 
 Events are emitted **inline during ETL** by each source's

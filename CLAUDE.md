@@ -37,7 +37,7 @@ assisthub list           # list workspaces (* marks active)
 |------|------|
 | `library/workspace.py` | Resolve active workspace path / DB path / exports dir |
 | `library/sources/config.py` | Load `sources.yaml`, resolve `auth_env` from `.env` |
-| `library/sources/{jira,github,github_issues}.py` | Per-source ETL — pull + transform + load |
+| `library/sources/{jira,github,github_issues,gdrive_gemini}.py` | Per-source ETL — pull + transform + load |
 | `library/sources/run.py` | ETL orchestrator — `python -m library.sources.run` |
 | `library/briefing.py` | Briefing data layer — `python -m library.briefing` |
 | `library/act.py` | Act data layer (P0–P3 ranking) — `python -m library.act` |

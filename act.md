@@ -58,13 +58,27 @@ If the user confirms, begin the actual work:
 - Default to making changes in `assistant-hub/` core unless the work
   is workspace-specific.
 
+### Step 5. (When applicable) fire AUTO runbooks
+
+`/act` reads recent monitor events (since-last-replay) and matches
+them against `/runbooks`. The output ends with a "Runbook proposals"
+section labelling each match `AUTO` / `PROPOSE` / `MANUAL` based on
+the runbook's automation level.
+
+```bash
+python -m library.act --execute   # fires AUTO-level matches
+```
+
+`--execute` runs each `auto`-level proposal's commands via shell,
+records success/fail on the runbook (which can promote/demote per
+the policy), and emits an `act runbook.executed.<outcome>` audit
+event. `semi-auto` and `manual` proposals are never auto-fired —
+they're surfaced for the user/agent to decide.
+
 ## Notes
 
 - Scoring is **graph-driven**, not LLM-driven — same input always
   gives the same buckets. As more data flows in (assignees, statuses,
   PRs implementing issues, blockers), the buckets get richer
   automatically without code changes.
-- This skill does not auto-execute (yet). Hub's `/act` runs
-  approved-and-CI-green PR merges, runbook steps, etc.; for
-  assistant-hub MVP we stop at the recommendation. Auto-execution
-  comes after `/monitor` (#10) lands.
+- `--execute` is opt-in for safety. Default `/act` is read-only.

@@ -167,6 +167,49 @@ def mark_replayed(workspace: str | None = None) -> None:
         )
 
 
+def suggest_runbooks(workspace: str | None = None) -> list[dict]:
+    """List (kind, source) groups that have events but no covering
+    runbook. The first time a pattern shows up there's nothing to
+    automate; the second time you've already done it manually and a
+    runbook is the obvious next step. This surfaces those gaps.
+
+    Each suggestion has: kind, source, count (events), latest event
+    id, sample subject_key.
+    """
+    from library import runbooks  # avoid circular import at module load
+
+    init(workspace)
+    with _conn(workspace) as conn:
+        groups = conn.execute(
+            """
+            SELECT kind, source, COUNT(*) AS n,
+                   MAX(id) AS latest_id,
+                   MAX(subject_key) AS sample_subject
+            FROM events
+            GROUP BY kind, source
+            ORDER BY n DESC
+            """
+        ).fetchall()
+
+    suggestions: list[dict] = []
+    for g in groups:
+        sample_event = {
+            "kind": g["kind"], "source": g["source"], "subject_key": "",
+        }
+        # Ask runbooks if any pattern covers this kind+source. Empty
+        # subject_key means we ignore subject_pattern filters here —
+        # any covering runbook with a generic pattern still counts.
+        covered = bool(runbooks.match_event(sample_event, workspace=workspace))
+        if covered:
+            continue
+        suggestions.append({
+            "kind": g["kind"], "source": g["source"], "count": g["n"],
+            "latest_event_id": g["latest_id"],
+            "sample_subject": g["sample_subject"],
+        })
+    return suggestions
+
+
 def stats(workspace: str | None = None) -> dict:
     init(workspace)
     with _conn(workspace) as conn:
@@ -204,6 +247,8 @@ def main() -> int:
     sub.add_parser("mark-replayed",
                    help="advance the replay cursor to now")
     sub.add_parser("stats", help="event counts by kind")
+    sub.add_parser("suggest",
+                   help="list (kind, source) groups missing runbook coverage")
 
     args = parser.parse_args()
 
@@ -220,6 +265,20 @@ def main() -> int:
         print(f"total: {s['total']}")
         for row in s["by_kind"]:
             print(f"  {row['kind']:25} {row['n']}")
+        return 0
+    elif args.cmd == "suggest":
+        sugs = suggest_runbooks()
+        if not sugs:
+            print("(every event kind already has a covering runbook)")
+            return 0
+        for s in sugs:
+            print(f"  kind={s['kind']:22} source={s['source']:18} "
+                  f"count={s['count']:>3}  latest_event=#{s['latest_event_id']}  "
+                  f"sample={s['sample_subject']}")
+        print()
+        print("To capture one as a runbook:")
+        print("  python -m library.runbooks create --name '<short>' "
+              "--kind <kind> --source <source> --command '<cmd>' --from-event <id>")
         return 0
     else:
         parser.print_help()

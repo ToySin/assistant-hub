@@ -64,6 +64,13 @@ sources:
     enabled: false
     auth_env: GOOGLE_OAUTH_TOKEN
     folder_ids: []           # only docs under these folders
+  gdrive_gemini:
+    enabled: false
+    # No auth_env — uses `gcloud auth application-default` token.
+    folder_ids: []           # empty = all drives the user can read
+    days_back: 30            # how far back the first sync looks
+    name_filter: "Notes by Gemini"
+    max_files: 50
 
   # === Calendar ===
   gcal:
