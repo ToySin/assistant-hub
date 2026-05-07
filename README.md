@@ -143,10 +143,11 @@ file in another agent.
 
 ## Data sources currently implemented
 
-Out of the box: `jira`, `github`, `github_issues`, `gdrive_gemini`. Many
-more are scaffolded in `templates/workspace/sources.yaml` (linear, slack,
-gmail, confluence, notion, gcal, obsidian, rss, …) — adding an adapter is
-a self-contained module under `library/sources/`.
+Out of the box: `jira`, `github`, `github_issues`, `gdrive_gemini`,
+`markdown_dirs`, `notion`, `confluence`. More are scaffolded in
+`templates/workspace/sources.yaml` (linear, slack, gmail, gcal,
+obsidian, rss, …) — adding an adapter is a self-contained module
+under `library/sources/`.
 
 ## Status
 

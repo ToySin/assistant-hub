@@ -54,7 +54,10 @@ sources:
     enabled: false
     base_url: ""             # https://<org>.atlassian.net/wiki
     auth_env: CONFLUENCE_TOKEN
-    spaces: []
+    # also reads CONFLUENCE_EMAIL, falls back to JIRA_EMAIL — Atlassian Cloud
+    # accepts the same address for both products.
+    spaces: []               # space keys, e.g. ["ENG", "DOCS"]
+    page_ids: []             # standalone pages outside the spaces above
   notion:
     enabled: false
     auth_env: NOTION_TOKEN
