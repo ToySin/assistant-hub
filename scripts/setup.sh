@@ -70,7 +70,7 @@ echo "==> installing git hooks"
 "$HUB/scripts/install-hooks.sh" "$WS" >/dev/null
 
 # --- 4. venv + deps ---
-DEPS=(surrealdb requests pyyaml anthropic)
+DEPS=(surrealdb requests pyyaml anthropic openai)
 
 ensure_uv() {
     command -v uv >/dev/null 2>&1 && return 0

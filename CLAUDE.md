@@ -45,7 +45,8 @@ assisthub list           # list workspaces (* marks active)
 | `library/monitor.py` | Event store (timeline + replay cursor) — `python -m library.monitor timeline` |
 | `library/runbooks.py` | Runbook store + lifecycle — `python -m library.runbooks list` |
 | `library/sync_state.py` | Per-(source, scope) last-sync timestamps backing delta ETL |
-| `library/enrichment.py` | L2 concept extraction via Claude — `python -m library.enrichment` (needs `ANTHROPIC_API_KEY`) |
+| `library/enrichment.py` | L2 concepts + action items extraction — `python -m library.enrichment` |
+| `library/llm.py` | Provider-agnostic LLM client (Anthropic default; switch to local Ollama / OpenAI-compatible via env) |
 | `graph/schema.surql` | SurrealDB schema (Issue is unified across sources) |
 | `graph/builder.py` | Connection + UPSERT helpers + `relate()` |
 | `graph/sync.py` | jsonl export/import (cross-laptop sync target) |
@@ -93,3 +94,15 @@ python -m library.act
   hooks block accidental commits of `.env` files and known token shapes.
 - New skills/scripts default to `assistant-hub` core unless they are
   workspace-specific.
+- L2 enrichment uses whatever LLM `library/llm.py` resolves. Default is
+  Anthropic + `ANTHROPIC_API_KEY`. To switch to a local Ollama box or
+  any OpenAI-compatible endpoint, set:
+
+  ```
+  ASSISTHUB_ENRICHMENT_PROVIDER=openai_compatible
+  ASSISTHUB_ENRICHMENT_MODEL=llama3.1:70b
+  ASSISTHUB_ENRICHMENT_BASE_URL=http://<host>:11434/v1
+  ```
+
+  The provider/model label is recorded in `extracted_by` on every
+  enrichment edge for provenance.

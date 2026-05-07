@@ -1,41 +1,33 @@
-"""Layer 2 enrichment — distill structured signal out of free text via Claude.
+"""Layer 2 enrichment — distill structured signal out of free text via an LLM.
 
 Two extraction modes share the same module:
 
-1. **Concept extraction from Issues.** For each existing Issue, ask
-   Claude for the technical/domain concepts referenced in title+body and
+1. **Concept extraction from Issues.** For each existing Issue, ask the
+   LLM for the technical/domain concepts referenced in title+body and
    write them as `Issue -> mentions -> Concept` edges with provenance.
 
 2. **Action item + concept extraction from Notes.** For each Note, ask
-   Claude for (a) the same kinds of concepts, plus (b) explicit action
+   the LLM for (a) the same kinds of concepts, plus (b) explicit action
    items that the note's author has written down. Each action item
    becomes a synthesized Issue (`source='note'`) linked back to the
    originating Note via an `extracted_from` edge. From this point on the
    action item is a first-class Issue and is picked up by /briefing,
    /act, /search etc. without further work.
 
-Auth: reads ANTHROPIC_API_KEY from the workspace's .env or process env.
+Provider/model is selected by the env vars in `library.llm` — defaults
+to Anthropic + ANTHROPIC_API_KEY, but can be pointed at OpenAI, a local
+Ollama, or any other OpenAI-compatible endpoint.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 
-from anthropic import Anthropic
-
 from graph import builder
+from library.llm import LLMClient, get_client
 from library.sources.config import _load_dotenv
 from library.workspace import get_workspace_path
-
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-
-
-def _model() -> str:
-    """Allow overriding via env when extracting noisy / domain-heavy text.
-    Default is haiku-4-5 — the work is structured extraction, not reasoning."""
-    return os.environ.get("ASSISTHUB_ENRICHMENT_MODEL", DEFAULT_MODEL)
 
 
 CONCEPT_RULES = """Concepts are:
@@ -111,27 +103,19 @@ class Stats:
 def enrich(workspace: str | None = None) -> Stats:
     """Run extraction over Issues and Notes in the active workspace's graph."""
     _load_dotenv(get_workspace_path(workspace) / ".env")
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set. Add it to the workspace's .env "
-            "(ANTHROPIC_API_KEY=sk-ant-...) or export it in your shell."
-        )
-
-    client = Anthropic(api_key=api_key)
-    model = _model()
-    extracted_by = f"library.enrichment-{model}"
+    client = get_client()
+    extracted_by = client.label()
     db = builder.connect(workspace)
 
     stats = Stats()
-    _enrich_issues(client, model, db, extracted_by, stats)
-    _enrich_notes(client, model, db, extracted_by, stats)
+    _enrich_issues(client, db, extracted_by, stats)
+    _enrich_notes(client, db, extracted_by, stats)
     return stats
 
 
 # ---------- Issue path (concepts only) ----------
 
-def _enrich_issues(client, model, db, extracted_by, stats: Stats) -> None:
+def _enrich_issues(client: LLMClient, db, extracted_by: str, stats: Stats) -> None:
     issues = db.query("SELECT id, source, external_key, title, body FROM Issue;")
     for issue in issues or []:
         # Skip Issues we synthesized from Notes — re-running enrichment over
@@ -143,7 +127,7 @@ def _enrich_issues(client, model, db, extracted_by, stats: Stats) -> None:
         if not text:
             continue
         try:
-            concepts = _call_concepts(client, model, text)
+            concepts = _call_concepts(client, text)
         except Exception as exc:  # noqa: BLE001
             stats.errors.append(f"issue {issue.get('external_key')}: {exc}")
             continue
@@ -153,14 +137,14 @@ def _enrich_issues(client, model, db, extracted_by, stats: Stats) -> None:
 
 # ---------- Note path (concepts + action items) ----------
 
-def _enrich_notes(client, model, db, extracted_by, stats: Stats) -> None:
+def _enrich_notes(client: LLMClient, db, extracted_by: str, stats: Stats) -> None:
     notes = db.query("SELECT id, source, path, title, body FROM Note;")
     for note in notes or []:
         text = _join_text(note.get("title"), note.get("body"))
         if not text:
             continue
         try:
-            payload = _call_note(client, model, text)
+            payload = _call_note(client, text)
         except Exception as exc:  # noqa: BLE001
             stats.errors.append(f"note {note.get('path')}: {exc}")
             continue
@@ -237,32 +221,16 @@ def _attach_concepts(
         stats.edges_created += 1
 
 
-def _call_concepts(client: Anthropic, model: str, text: str) -> list[dict]:
-    raw = _ask(client, model, ISSUE_SYSTEM_PROMPT, text)
+def _call_concepts(client: LLMClient, text: str) -> list[dict]:
+    raw = client.ask(ISSUE_SYSTEM_PROMPT, text)
     parsed = _parse_json(raw)
     return parsed if isinstance(parsed, list) else []
 
 
-def _call_note(client: Anthropic, model: str, text: str) -> dict:
-    raw = _ask(client, model, NOTE_SYSTEM_PROMPT, text)
+def _call_note(client: LLMClient, text: str) -> dict:
+    raw = client.ask(NOTE_SYSTEM_PROMPT, text)
     parsed = _parse_json(raw)
     return parsed if isinstance(parsed, dict) else {}
-
-
-def _ask(client: Anthropic, model: str, system_prompt: str, user_text: str) -> str:
-    resp = client.messages.create(
-        model=model,
-        max_tokens=2048,
-        system=[
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[{"role": "user", "content": user_text}],
-    )
-    return resp.content[0].text.strip()
 
 
 def _parse_json(content: str):
