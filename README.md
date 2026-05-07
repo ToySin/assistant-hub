@@ -104,7 +104,7 @@ resume mid-conversation.
 | `graph/sync.py` | jsonl export/import (cross-laptop sync target) |
 | `scripts/` | Bootstrap and operational scripts |
 | `templates/workspace/` | Files copied into each new workspace |
-| `*.md` (top level) | Claude Code slash command skills |
+| `.claude/commands/*.md` | Claude Code slash command skills (workspaces get symlinks at create time) |
 
 [`CLAUDE.md`](./CLAUDE.md) is the full index — start there if you'll be
 working in this repo with an AI agent.
@@ -116,12 +116,12 @@ file in another agent.
 
 | Skill | What it does |
 |-------|--------------|
-| [`ws-config`](./ws-config.md) | Workspace lifecycle — create / switch / configure sources / status (single conversational entry) |
-| [`briefing`](./briefing.md) | Session-start summary (open issues, PRs, blockers) |
-| [`act`](./act.md) | Graph-driven priority queue — pick the next item |
-| [`search`](./search.md) | Local FTS over Issue/PR bodies (SQLite FTS5 sidecar) |
-| [`monitor`](./monitor.md) | Event timeline + replay cursor for /briefing |
-| [`runbooks`](./runbooks.md) | Self-reinforcing recipes — recurring patterns become reusable steps |
+| [`ws-config`](./.claude/commands/ws-config.md) | Workspace lifecycle — create / switch / configure sources / status (single conversational entry) |
+| [`briefing`](./.claude/commands/briefing.md) | Session-start summary (open issues, PRs, blockers) |
+| [`act`](./.claude/commands/act.md) | Graph-driven priority queue — pick the next item |
+| [`search`](./.claude/commands/search.md) | Local FTS over Issue/PR bodies (SQLite FTS5 sidecar) |
+| [`monitor`](./.claude/commands/monitor.md) | Event timeline + replay cursor for /briefing |
+| [`runbooks`](./.claude/commands/runbooks.md) | Self-reinforcing recipes — recurring patterns become reusable steps |
 
 ## Conventions
 

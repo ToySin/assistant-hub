@@ -21,14 +21,18 @@ assisthub list           # list workspaces (* marks active)
 
 ## Skills
 
+All skills live in `.claude/commands/<name>.md`. Claude Code picks them
+up automatically when the cwd is this repo or a workspace (workspaces
+get symlinks at create time — see `scripts/new-workspace.sh`).
+
 | Skill | Purpose | When to use |
 |-------|---------|-------------|
-| [`ws-config.md`](./ws-config.md) | Workspace lifecycle — create / switch / configure sources / status | Setting up a new context, adding data sources, or checking workspace health |
-| [`briefing.md`](./briefing.md) | Session-start summary (open issues, PRs, blockers) | Begin of session, or when re-orienting mid-session |
-| [`act.md`](./act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
-| [`search.md`](./search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
-| [`monitor.md`](./monitor.md) | Event timeline (open/close/title/status) + replay cursor | After `/briefing`, or to inspect what changed |
-| [`runbooks.md`](./runbooks.md) | Self-reinforcing recipes — pattern → steps with promote/demote | After resolving a recurring event by hand |
+| [`ws-config`](./.claude/commands/ws-config.md) | Workspace lifecycle — create / switch / configure sources / status | Setting up a new context, adding data sources, or checking workspace health |
+| [`briefing`](./.claude/commands/briefing.md) | Session-start summary (open issues, PRs, blockers) | Begin of session, or when re-orienting mid-session |
+| [`act`](./.claude/commands/act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
+| [`search`](./.claude/commands/search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
+| [`monitor`](./.claude/commands/monitor.md) | Event timeline (open/close/title/status) + replay cursor | After `/briefing`, or to inspect what changed |
+| [`runbooks`](./.claude/commands/runbooks.md) | Self-reinforcing recipes — pattern → steps with promote/demote | After resolving a recurring event by hand |
 
 ## Code
 

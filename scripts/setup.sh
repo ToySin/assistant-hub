@@ -69,6 +69,10 @@ echo "==> installing git hooks"
 "$HUB/scripts/install-hooks.sh" "$HUB" >/dev/null
 "$HUB/scripts/install-hooks.sh" "$WS" >/dev/null
 
+# --- 3b. link slash commands into the workspace ---
+echo "==> linking slash commands into workspace"
+"$HUB/scripts/link-commands.sh" "$WS" >/dev/null
+
 # --- 4. venv + deps ---
 DEPS=(surrealdb requests pyyaml anthropic openai)
 

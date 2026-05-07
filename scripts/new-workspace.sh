@@ -92,6 +92,12 @@ git init -q -b main
 # everything from the start.
 "$HUB_ROOT/scripts/install-hooks.sh" "$TARGET_DIR" >/dev/null
 
+# Symlink slash command files from assistant-hub so /ws-config, /briefing,
+# /act, etc. are available when the user's cwd is this workspace. Symlinks
+# are relative (../../../assistant-hub/...) so they keep working as long as
+# both repos are siblings under the same parent — the assumed convention.
+"$HUB_ROOT/scripts/link-commands.sh" "$TARGET_DIR" >/dev/null
+
 git add .
 git commit -q -m "Initial commit — assisthub-ws-$NAME"
 
