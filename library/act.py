@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from graph import builder
 from library import monitor, runbooks
+from library.issue_format import format_issue_line, pick_source_note
 
 PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
@@ -33,6 +34,7 @@ class Recommendation:
     status: str
     priority: str        # P0 / P1 / P2 / P3
     reasons: list[str] = field(default_factory=list)
+    source_note: str | None = None    # for source='note', the originating Note's title
 
 
 @dataclass
@@ -60,7 +62,8 @@ def assess(workspace: str | None = None) -> Assessment:
             source, external_key, title, status,
             ->blocked_by->Issue.external_key AS blocked_by,
             <-blocked_by<-Issue.external_key AS blocks,
-            <-implements<-GitHubPR.uid       AS prs
+            <-implements<-GitHubPR.uid       AS prs,
+            ->extracted_from->Note.title     AS source_note_titles
         FROM Issue;
         """
     )
@@ -78,6 +81,7 @@ def assess(workspace: str | None = None) -> Assessment:
             status=row.get("status") or "",
             priority=priority,
             reasons=reasons,
+            source_note=pick_source_note(row),
         ))
 
     recs.sort(key=lambda r: (PRIORITY_ORDER[r.priority], r.external_key))
@@ -156,7 +160,10 @@ def format_text(a: Assessment) -> str:
             continue
         lines.append(f"## {priority} ({_priority_blurb(priority)}) — {len(bucket)}")
         for rec in bucket:
-            lines.append(f"- [{rec.source}] {rec.external_key} ({rec.status}) — {rec.title}")
+            lines.append("- " + format_issue_line(
+                rec.source, rec.external_key, rec.title, rec.status,
+                source_note=rec.source_note,
+            ))
             for reason in rec.reasons:
                 lines.append(f"    {reason}")
         lines.append("")

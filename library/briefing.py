@@ -16,6 +16,7 @@ import yaml
 
 from graph import builder
 from library import monitor
+from library.issue_format import format_issue_line, pick_source_note
 from library.workspace import get_workspace_path
 
 
@@ -37,7 +38,9 @@ def collect(workspace: str | None = None) -> Briefing:
     db = builder.connect(workspace)
 
     issue_rows = db.query(
-        "SELECT source, external_key, title, status FROM Issue "
+        "SELECT source, external_key, title, status, "
+        "->extracted_from->Note.title AS source_note_titles "
+        "FROM Issue "
         "WHERE status NOT IN ['closed', 'Done', 'Resolved'] "
         "ORDER BY source, external_key;"
     )
@@ -101,7 +104,11 @@ def format_text(b: Briefing) -> str:
         summary = ", ".join(f"{k}: {v}" for k, v in sorted(b.issue_counts_by_source.items()))
         lines.append(f"## Open issues ({summary})")
         for row in b.open_issues:
-            lines.append(f"- [{row['source']}] {row['external_key']} ({row['status']}) — {row['title']}")
+            lines.append("- " + format_issue_line(
+                row.get("source"), row.get("external_key"),
+                row.get("title"), row.get("status"),
+                source_note=pick_source_note(row),
+            ))
         lines.append("")
     else:
         lines.append("## Open issues — none")
