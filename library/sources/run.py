@@ -26,6 +26,7 @@ from library.sources import github_issues as github_issues_source
 from library.sources import jira as jira_source
 from library.sources import gdrive_gemini as gdrive_gemini_source
 from library.sources import markdown_dirs as markdown_dirs_source
+from library.sources import notion as notion_source
 
 DISPATCH = {
     "jira": jira_source.sync,
@@ -33,6 +34,7 @@ DISPATCH = {
     "github_issues": github_issues_source.sync,
     "gdrive_gemini": gdrive_gemini_source.sync,
     "markdown_dirs": markdown_dirs_source.sync,
+    "notion": notion_source.sync,
 }
 
 
