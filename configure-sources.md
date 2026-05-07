@@ -1,97 +1,194 @@
-# /configure-sources — Interactively fill an assistant-hub workspace's `sources.yaml`
+# /configure-sources — Interactively fill an assistant-hub workspace's sources.yaml
 
-Walks the user through enabling and configuring data sources for the active
-workspace. Re-runnable: safe to invoke any time to add or modify sources
-after initial workspace creation.
+You're walking the user through enabling and configuring data sources
+for their active workspace. **This is a conversation, not a script.**
+Show menus, wait for the user's choices, validate inputs, surface
+discovery (MCP tools, `gh`, etc.) instead of asking them to type IDs
+from memory, and only write the file at the end after one last
+confirmation.
 
-## Prerequisites
+Re-runnable: safe to invoke any time to add or modify sources later.
 
-- `ASSISTHUB_WORKSPACE` is set (the active workspace's short name).
-- The workspace exists at `~/repositories/assisthub-ws-$ASSISTHUB_WORKSPACE/`.
-- Workspace `sources.yaml` exists (created by `/new-workspace`).
+## Prerequisites — verify before starting
 
-## Procedure
+- `ASSISTHUB_WORKSPACE` is set, OR `assisthub current` returns a name.
+- The workspace exists at `~/repositories/assisthub-ws-<name>/`.
+- `<workspace>/sources.yaml` exists (created by `/new-workspace`).
 
-The configuration is a conversation, not a fill-in form. Walk through it
-step by step. Use connected tools (MCP servers, `gh`, `glab`, etc.) for
-discovery so the user does not need to remember IDs from memory.
+If any prerequisite fails, tell the user clearly and stop.
 
-### Step 1. Read current state
+## Conversation flow
 
-```bash
-cat ~/repositories/assisthub-ws-$ASSISTHUB_WORKSPACE/sources.yaml
-```
+### 1. Open
 
-Report which sources are currently enabled and which are not.
+Read the workspace's `sources.yaml`. Greet briefly and report current
+state — which sources are `enabled: true`, which are `enabled: false`.
+Example opening (Korean is fine — match the user's language):
 
-### Step 2. Pick categories to (re)visit
+> 워크스페이스 `<name>`의 sources.yaml 상태:
+>
+> ✓ 활성화: `github`, `github_issues`
+> ○ 비활성: `jira`, `linear`, `slack`, `markdown_dirs`, ...
+>
+> 어느 카테고리 손볼까요? 활성화한 것도 다시 손봐도 됩니다.
 
-Ask the user which categories they want to configure now:
+If nothing is enabled (fresh workspace), say so and proceed straight
+to category picking.
 
-- Issue & task tracking — jira, linear, github_issues
-- Code & PRs — github, gitlab, local_repos
-- Communication — slack, gmail
-- Docs & wikis — confluence, notion, gdrive_docs
-- Calendar — gcal
-- Notes & reading — obsidian, markdown_dirs, readwise
-- Web feeds — rss
-- Custom HTTP — http
+### 2. Pick categories
 
-The user may pick any subset; skip everything else.
+Show a numbered category menu. Wait for the user's response. Accept
+numbers, names, or "all". Confirm what was chosen before moving on.
 
-### Step 3. For each chosen source, gather required fields
+> 카테고리:
+> 1. **Issue / task tracking** — `jira`, `linear`, `github_issues`
+> 2. **Code & PRs** — `github`, `gitlab`, `local_repos`
+> 3. **Communication** — `slack`, `gmail`
+> 4. **Docs & wikis** — `confluence`, `notion`, `gdrive_docs`, `gdrive_gemini`
+> 5. **Calendar** — `gcal`
+> 6. **Notes** — `obsidian`, `markdown_dirs`, `readwise`
+> 7. **Web feeds** — `rss`
+> 8. **Custom HTTP** — `http`
+>
+> 번호나 이름으로 골라주세요 (다중 선택 OK):
 
-Use this discovery table. If a tool is connected, prefer it over asking the
-user to type IDs from memory.
+### 3. For each chosen source, gather fields one at a time
 
-| Source | Required fields | Discovery helper (use if available) |
-|--------|-----------------|-------------------------------------|
-| jira | `base_url`, `project_keys` | Atlassian MCP `getAccessibleAtlassianResources` then `getVisibleJiraProjects` |
-| linear | `team_keys` | Linear API; otherwise ask |
-| github_issues, github | `repos` | `gh repo list <owner> --limit 50 --json nameWithOwner` |
-| gitlab | `base_url`, `projects` | Ask user |
-| slack | `channels` | Slack MCP `slack_search_channels` |
-| gmail | `query` | Suggest examples (`from:boss newer_than:7d`); ask |
-| confluence | `base_url`, `spaces` | Atlassian MCP `getConfluenceSpaces` |
-| notion | `database_ids` and/or `page_ids` | Ask user |
-| gdrive_docs | `folder_ids` | Drive MCP if connected; otherwise ask |
-| gcal | `calendar_ids`, `days_back`, `days_ahead` | Calendar MCP if connected; defaults `["primary"]`, 7, 14 |
-| obsidian | `vault_path` | Ask, then verify the directory exists |
-| markdown_dirs | `paths` | Ask, then verify each directory exists |
-| readwise | (none) | Just enable |
-| rss | `feeds` | Ask for URL list |
-| http | `endpoints` (list of `{name, url, auth_env, parser}`) | Ask per endpoint |
+**Ask one thing at a time, validate, then move on.** Don't dump a form
+of 5 questions; conversation > batch.
 
-For each chosen source: ask only the required fields, validate where
-possible, and remember the answers.
+For every source, the loop is the same:
 
-### Step 4. Identify required env vars
+1. Tell the user which fields you need.
+2. If a discovery tool is connected (Atlassian MCP, `gh`, Slack MCP,
+   Drive MCP), use it and present the results as a menu the user can
+   pick from. Do not make them type IDs from memory.
+3. Validate each answer (URL reachability, path exists, etc.) and ask
+   again on failure with the specific error.
+4. Note the answers in working memory; do NOT touch the file yet.
 
-Aggregate every `auth_env` referenced by the newly enabled sources. Read
-the workspace's `.env` (if it exists) and report which variables are
-already set vs missing. Show the user exactly which lines they need to add
-to `.env`.
+Per-source field map and discovery hints:
 
-### Step 5. Write `sources.yaml`
+| Source | Required fields | Discovery helper |
+|--------|-----------------|------------------|
+| `jira` | `base_url`, `project_keys` | Atlassian MCP `getAccessibleAtlassianResources` → `getVisibleJiraProjects` |
+| `linear` | `team_keys` | Linear API if available; else ask |
+| `github_issues`, `github` | `repos` (list of `owner/name`) | `gh repo list <owner> --limit 100 --json nameWithOwner` |
+| `gitlab` | `base_url`, `projects` | Ask |
+| `local_repos` | `paths` (abs) | Ask, verify each is a git repo |
+| `slack` | `channels` | Slack MCP `slack_search_channels` |
+| `gmail` | `query` | Suggest examples (`from:boss newer_than:7d`) |
+| `confluence` | `base_url`, `spaces` | Atlassian MCP `getConfluenceSpaces` |
+| `notion` | `database_ids` and/or `page_ids` | Ask |
+| `gdrive_docs` | `folder_ids` | Drive MCP if connected; else ask |
+| `gdrive_gemini` | `folder_ids` (optional), `name_filter`, `days_back`, `max_files` | Ask, defaults: `name_filter="Notes by Gemini"`, `days_back=30`, `max_files=50` |
+| `gcal` | `calendar_ids`, `days_back`, `days_ahead` | Calendar MCP if connected; defaults `["primary"]`, 7, 14 |
+| `obsidian` | `vault_path` (abs) | Ask, verify directory exists |
+| `markdown_dirs` | `paths` (list of abs dirs) | Ask, verify each exists |
+| `readwise` | (none) | Just enable |
+| `rss` | `feeds` (URL list) | Ask |
+| `http` | `endpoints` (list of `{name, url, auth_env, parser}`) | Ask per endpoint |
 
-Edit `~/repositories/assisthub-ws-$ASSISTHUB_WORKSPACE/sources.yaml`:
+Concrete dialogue examples:
 
-- For each source the user enabled, set `enabled: true` and fill the
-  fields gathered in Step 3.
-- Leave untouched sources alone (do not blank out their existing config).
-- Preserve the file's category comments and overall structure.
+**jira**:
+> jira는 `base_url`과 `project_keys`가 필요합니다.
+>
+> 1) base_url 알려주세요 (예: `https://yourcorp.atlassian.net`):
+>
+> [user pastes] →
+> Atlassian MCP가 붙어있어요. 추적 가능한 프로젝트 목록 받아올까요? (y/n)
+>
+> [if yes, call getAccessibleAtlassianResources + getVisibleJiraProjects, render]
+>
+> 2) 추적할 프로젝트 키들 골라주세요 (번호/이름, 다중 OK):
 
-### Step 6. Confirm
+**markdown_dirs**:
+> `markdown_dirs`는 `paths` 배열만 필요합니다 (절대경로).
+>
+> 어느 디렉토리들 추적할까요? 한 줄에 하나씩 또는 콤마로:
+>
+> [user types] →
+> 검증 중... ✓ 3개 모두 존재
+>
+> (혹시 1개 존재 안 하면) ✗ `/home/x/missing` — 디렉토리가 없네요. 다른 경로?
 
-Show the diff of `sources.yaml`. Print the env-var checklist from Step 4.
-Tell the user the next step is to run the workspace's ETL (once it
-exists) to populate the graph.
+**github_issues**:
+> github_issues는 `repos` 목록(owner/name 형태)이 필요합니다.
+>
+> `gh repo list ToySin --limit 50` 돌려서 메뉴로 뽑아드릴까요? 아니면 직접 입력?
+>
+> [user picks from menu]
 
-## Notes
+### 4. Aggregate env-var requirements
 
-- This skill never writes to `.env` directly — credentials stay in the
-  user's hands.
-- The skill only edits `sources.yaml`. It does not run ETL or touch the
-  graph DB.
-- Re-running this skill is safe: it merges with existing config rather
-  than overwriting unrelated entries.
+After all sources are done, list the `auth_env` references they need.
+Read the workspace's `.env` (if it exists) and split into "already
+set" vs "missing":
+
+> 활성화한 소스들이 필요로 하는 환경변수:
+>
+> ✓ 이미 `.env`에 있는 것:
+>   - `GITHUB_TOKEN`
+>
+> ✗ 추가해야 하는 것 (파일에 직접 넣어주세요):
+>   - `JIRA_TOKEN=...`
+>   - `JIRA_EMAIL=...`
+>
+> ⚠️ 시크릿은 제가 `.env`에 직접 안 씁니다. 위 라인들을 직접 추가해주세요.
+
+### 5. Show the diff and confirm
+
+Render the YAML changes you're about to make (a unified diff, or the
+section that changes). Wait for explicit y/n.
+
+> sources.yaml 변경 미리보기:
+>
+> ```diff
+>   jira:
+> -   enabled: false
+> +   enabled: true
+> -   base_url: ""
+> +   base_url: "https://yourcorp.atlassian.net"
+> -   project_keys: []
+> +   project_keys: ["ACS", "SYS"]
+>     auth_env: JIRA_TOKEN
+> ```
+>
+> 적용할까요? (y/n)
+
+If `n`, ask which part to revise and loop back.
+If `y`, write the file.
+
+### 6. Wrap up
+
+After writing:
+
+> ✓ `<workspace>/sources.yaml` 갱신됨
+>
+> 다음 단계:
+> 1. `<workspace>/.env`에 위 환경변수 추가
+> 2. ETL 실행: `python -m library.sources.run`
+> 3. (선택) L2 enrichment: `python -m library.enrichment`
+
+## Hard rules
+
+- **Never write to `.env`.** Credentials stay in the user's hands —
+  print the lines they need to add and stop. Even if asked, refuse and
+  remind them why.
+- **Never blank out a source the user didn't touch this session.** If
+  jira was enabled with config and the user didn't pick jira this time,
+  leave jira alone.
+- **Preserve file structure.** Keep category comments, the `auth_env`
+  pointer style, and field ordering as they were in the template.
+- **Validate before recording.** Path doesn't exist → ask again. URL
+  unreachable → flag it (don't fail, but tell the user).
+- **One source at a time.** Don't ask 5 fields in one block.
+- **Bail gracefully.** If the user says "skip" / "cancel" / "stop",
+  acknowledge and exit without writing.
+
+## When to fall back from a discovery tool
+
+If an MCP / CLI tool errors out (auth missing, network, etc.), do
+*not* loop on retries. Tell the user briefly, then ask them to type
+the value manually. Note in summary: "Atlassian MCP not available, `project_keys` entered manually".
