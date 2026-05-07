@@ -41,7 +41,8 @@ def collect(workspace: str | None = None) -> Briefing:
         "SELECT source, external_key, title, status, "
         "->extracted_from->Note.title AS source_note_titles "
         "FROM Issue "
-        "WHERE status NOT IN ['closed', 'Done', 'Resolved'] "
+        "WHERE string::lowercase(status) NOT IN "
+        "['closed', 'done', 'resolved', 'complete', 'completed', 'stale'] "
         "ORDER BY source, external_key;"
     )
 

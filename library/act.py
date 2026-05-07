@@ -23,7 +23,12 @@ from library.issue_format import format_issue_line, pick_source_note
 
 PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
-CLOSED_STATUSES = {"closed", "done", "resolved", "complete", "completed"}
+CLOSED_STATUSES = {
+    "closed", "done", "resolved", "complete", "completed",
+    "stale",  # set by `enrichment --prune-stale` when an extracted action item
+              # is no longer in the source note. Stale items shouldn't surface
+              # in /act's priority queue.
+}
 
 
 @dataclass

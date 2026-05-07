@@ -97,11 +97,22 @@ class Stats:
     concepts_extracted: int = 0
     action_items_extracted: int = 0
     edges_created: int = 0
+    stale_marked: int = 0
     errors: list[str] = field(default_factory=list)
 
 
-def enrich(workspace: str | None = None) -> Stats:
-    """Run extraction over Issues and Notes in the active workspace's graph."""
+def enrich(workspace: str | None = None,
+           prune_stale: bool = False) -> Stats:
+    """Run extraction over Issues and Notes in the active workspace's graph.
+
+    `prune_stale=True`: after re-extracting from a Note, any Issue
+    previously linked to that Note via extracted_from but missing
+    from the new payload is marked `status = 'stale'`. Useful when a
+    user removes / completes a TODO and wants the synthesized Issue
+    to fall out of /act and /briefing automatically. Off by default
+    because LLM titles can drift slightly between runs (same TODO,
+    different slug → false-positive stale).
+    """
     _load_dotenv(get_workspace_path(workspace) / ".env")
     client = get_client()
     extracted_by = client.label()
@@ -109,7 +120,7 @@ def enrich(workspace: str | None = None) -> Stats:
 
     stats = Stats()
     _enrich_issues(client, db, extracted_by, stats)
-    _enrich_notes(client, db, extracted_by, stats)
+    _enrich_notes(client, db, extracted_by, stats, prune_stale=prune_stale)
     return stats
 
 
@@ -137,7 +148,10 @@ def _enrich_issues(client: LLMClient, db, extracted_by: str, stats: Stats) -> No
 
 # ---------- Note path (concepts + action items) ----------
 
-def _enrich_notes(client: LLMClient, db, extracted_by: str, stats: Stats) -> None:
+def _enrich_notes(
+    client: LLMClient, db, extracted_by: str, stats: Stats,
+    prune_stale: bool = False,
+) -> None:
     notes = db.query("SELECT id, source, path, title, body FROM Note;")
     for note in notes or []:
         text = _join_text(note.get("title"), note.get("body"))
@@ -155,6 +169,7 @@ def _enrich_notes(client: LLMClient, db, extracted_by: str, stats: Stats) -> Non
         # attached to each synthesized Issue below instead, since the
         # action items inherit the note's topical context.
 
+        new_keys: set[str] = set()
         for item in payload.get("action_items") or []:
             title = (item.get("title") or "").strip()
             if not title:
@@ -165,6 +180,7 @@ def _enrich_notes(client: LLMClient, db, extracted_by: str, stats: Stats) -> Non
                 status = "open"
 
             external_key = _action_item_key(note.get("path"), title)
+            new_keys.add(external_key)
             issue_id = builder.upsert_issue(
                 db,
                 source="note",
@@ -184,6 +200,39 @@ def _enrich_notes(client: LLMClient, db, extracted_by: str, stats: Stats) -> Non
             )
             stats.action_items_extracted += 1
             stats.edges_created += 1
+
+        if prune_stale:
+            stats.stale_marked += _mark_stale(db, note["id"], new_keys)
+
+
+def _mark_stale(db, note_id, current_keys: set[str]) -> int:
+    """Mark Issues previously extracted from this note as 'stale' when
+    they're no longer in the current re-extraction. Operates only on
+    `source='note'` Issues so it can't accidentally touch human-curated
+    Issues that happen to have an extracted_from edge for some other
+    reason. Returns the count marked stale."""
+    rows = db.query(
+        "SELECT in.external_key AS key, in.status AS status "
+        "FROM extracted_from WHERE out = $note;",
+        {"note": note_id},
+    )
+    stale = 0
+    for row in rows or []:
+        key = row.get("key")
+        if not key or key in current_keys:
+            continue
+        # Don't overwrite if already stale or already done — `done` is a
+        # legitimate end state from a checkbox `- [x]` and shouldn't be
+        # downgraded to stale.
+        if (row.get("status") or "").lower() in ("stale", "done"):
+            continue
+        db.query(
+            "UPDATE Issue SET status = 'stale' "
+            "WHERE source = 'note' AND external_key = $key;",
+            {"key": key},
+        )
+        stale += 1
+    return stale
 
 
 def _action_item_key(note_path: str | None, title: str) -> str:
@@ -244,7 +293,18 @@ def _parse_json(content: str):
 
 
 def main() -> None:
-    stats = enrich()
+    import argparse
+    parser = argparse.ArgumentParser(prog="library.enrichment",
+                                     description="L2 enrichment over Issues + Notes")
+    parser.add_argument(
+        "--prune-stale", action="store_true",
+        help="Mark Issues as 'stale' when they were previously extracted "
+             "from a Note but no longer appear in the current re-extraction. "
+             "Off by default — turn on once you're sure your LLM produces "
+             "stable enough action-item titles for your notes.",
+    )
+    args = parser.parse_args()
+    stats = enrich(prune_stale=args.prune_stale)
     print(f"[enrichment] {stats}")
 
 
