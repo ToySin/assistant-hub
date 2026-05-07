@@ -59,12 +59,15 @@ cd ~/repositories/assistant-hub
 
 # 1. Create your first workspace (creates a private GitHub repo too)
 ./scripts/new-workspace.sh <workspace-name>
+# (or, in Claude Code, just run /ws-config — it walks you through 1+3
+#  conversationally and uses connected tools to discover IDs)
 
 # 2. Bootstrap the laptop (hooks + venv + active workspace + session restore)
 ./scripts/setup.sh <workspace-name>
 
-# 3. Configure sources (interactive — needs Claude Code)
-#    /configure-sources    in Claude
+# 3. Configure sources
+#    /ws-config in Claude (recommended — interactive, validates inputs,
+#    surfaces tool-aided menus instead of asking for IDs from memory),
 #    or edit <workspace>/sources.yaml by hand and add creds to <workspace>/.env
 
 # 4. Run the ETL
@@ -113,8 +116,7 @@ file in another agent.
 
 | Skill | What it does |
 |-------|--------------|
-| [`new-workspace`](./new-workspace.md) | Bootstrap a new workspace (local + private GitHub) |
-| [`configure-sources`](./configure-sources.md) | Interactively fill the active workspace's `sources.yaml` |
+| [`ws-config`](./ws-config.md) | Workspace lifecycle — create / switch / configure sources / status (single conversational entry) |
 | [`briefing`](./briefing.md) | Session-start summary (open issues, PRs, blockers) |
 | [`act`](./act.md) | Graph-driven priority queue — pick the next item |
 | [`search`](./search.md) | Local FTS over Issue/PR bodies (SQLite FTS5 sidecar) |

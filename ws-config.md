@@ -1,29 +1,115 @@
-# /configure-sources — Interactively fill an assistant-hub workspace's sources.yaml
+# /ws-config — Workspace lifecycle (create / switch / configure)
 
-You're walking the user through enabling and configuring data sources
-for their active workspace. **This is a conversation, not a script.**
-Show menus, wait for the user's choices, validate inputs, surface
-discovery (MCP tools, `gh`, etc.) instead of asking them to type IDs
-from memory, and only write the file at the end after one last
-confirmation.
+Single conversational entry point for everything workspace-related.
+Branch at start based on what the user wants. **This is a
+conversation — show menus, wait for answers, validate inputs, only
+write/run things after explicit confirmation.**
 
-Re-runnable: safe to invoke any time to add or modify sources later.
+Re-runnable. Korean is fine; match the user's language.
 
-## Prerequisites — verify before starting
+## Open
 
-- `ASSISTHUB_WORKSPACE` is set, OR `assisthub current` returns a name.
-- The workspace exists at `~/repositories/assisthub-ws-<name>/`.
-- `<workspace>/sources.yaml` exists (created by `/new-workspace`).
+First, gather state to render an accurate menu:
 
-If any prerequisite fails, tell the user clearly and stop.
+```bash
+~/repositories/assistant-hub/scripts/assisthub list 2>/dev/null   # workspaces (* marks active)
+~/repositories/assistant-hub/scripts/assisthub current 2>/dev/null  # active name (or empty)
+```
 
-## Conversation flow
+Then show:
 
-### 1. Open
+> 현재 상태:
+> - 활성 워크스페이스: `<name>`  (없으면 "(없음)")
+> - 존재하는 워크스페이스: `hub-improvement`, `personal`, ...
+>
+> 뭐 하시겠어요?
+>
+> 1. 새 워크스페이스 만들기
+> 2. 활성 전환
+> 3. 활성 워크스페이스의 데이터 소스 설정
+> 4. 활성 워크스페이스 상태 점검 (sources / env / exports)
+> 5. 취소
 
-Read the workspace's `sources.yaml`. Greet briefly and report current
-state — which sources are `enabled: true`, which are `enabled: false`.
-Example opening (Korean is fine — match the user's language):
+Wait for the choice. Branch accordingly. After a branch finishes, ask
+if they want to do anything else and either loop back to the menu or
+say goodbye.
+
+---
+
+## Branch 1 — Create new workspace
+
+### 1.1 Gather inputs
+
+> 워크스페이스 이름 (소문자/숫자/대시, 알파넘으로 시작):
+
+Validate against `^[a-z0-9][a-z0-9-]*$`. If invalid, restate the rule
+and ask again. If `~/repositories/assisthub-ws-<name>/` already exists,
+say so and bail back to the main menu.
+
+> GitHub에 private 레포로 푸시할까요? (y/n, 기본 y)
+> [if y] GitHub owner는 `<현재 gh user>` 그대로 갈까요? (y/n)
+
+### 1.2 Run the bootstrap script
+
+```bash
+~/repositories/assistant-hub/scripts/new-workspace.sh <name>           # default = push
+~/repositories/assistant-hub/scripts/new-workspace.sh <name> --no-push # local only
+~/repositories/assistant-hub/scripts/new-workspace.sh <name> --owner <gh-owner>
+```
+
+The script handles: directory copy from `templates/workspace/`,
+`{{WORKSPACE_NAME}}` substitution, `git init`, hook install, initial
+commit, and (if pushing) `gh repo create --private --push`.
+
+Report back:
+- Local path
+- GitHub URL (if pushed)
+
+### 1.3 Set as active
+
+> 방금 만든 `<name>`을 활성으로 설정할까요? (y/n)
+
+If yes:
+
+```bash
+~/repositories/assistant-hub/scripts/assisthub use <name>
+```
+
+### 1.4 Roll into source configuration
+
+> 새 워크스페이스에 데이터 소스도 지금 설정할까요? (y/n)
+
+If yes, jump to Branch 3 with this workspace as the target.
+If no, stop and remind them they can run `/ws-config` again later.
+
+---
+
+## Branch 2 — Switch active workspace
+
+```bash
+~/repositories/assistant-hub/scripts/assisthub list
+```
+
+Render as a numbered list with the asterisk on the current active.
+Wait for choice (number or name).
+
+```bash
+~/repositories/assistant-hub/scripts/assisthub use <name>
+```
+
+Confirm the new active is what they expected.
+
+---
+
+## Branch 3 — Configure data sources for the active workspace
+
+### 3.1 Read current state
+
+```bash
+cat ~/repositories/assisthub-ws-$(~/repositories/assistant-hub/scripts/assisthub current)/sources.yaml
+```
+
+Report which sources are `enabled: true`, which are `enabled: false`.
 
 > 워크스페이스 `<name>`의 sources.yaml 상태:
 >
@@ -32,13 +118,7 @@ Example opening (Korean is fine — match the user's language):
 >
 > 어느 카테고리 손볼까요? 활성화한 것도 다시 손봐도 됩니다.
 
-If nothing is enabled (fresh workspace), say so and proceed straight
-to category picking.
-
-### 2. Pick categories
-
-Show a numbered category menu. Wait for the user's response. Accept
-numbers, names, or "all". Confirm what was chosen before moving on.
+### 3.2 Pick categories
 
 > 카테고리:
 > 1. **Issue / task tracking** — `jira`, `linear`, `github_issues`
@@ -52,7 +132,9 @@ numbers, names, or "all". Confirm what was chosen before moving on.
 >
 > 번호나 이름으로 골라주세요 (다중 선택 OK):
 
-### 3. For each chosen source, gather fields one at a time
+Confirm what was chosen before moving on.
+
+### 3.3 For each chosen source, gather fields one at a time
 
 **Ask one thing at a time, validate, then move on.** Don't dump a form
 of 5 questions; conversation > batch.
@@ -61,8 +143,8 @@ For every source, the loop is the same:
 
 1. Tell the user which fields you need.
 2. If a discovery tool is connected (Atlassian MCP, `gh`, Slack MCP,
-   Drive MCP), use it and present the results as a menu the user can
-   pick from. Do not make them type IDs from memory.
+   Drive MCP, ...), use it and present the results as a menu the user
+   can pick from. Do not make them type IDs from memory.
 3. Validate each answer (URL reachability, path exists, etc.) and ask
    again on failure with the specific error.
 4. Note the answers in working memory; do NOT touch the file yet.
@@ -96,8 +178,7 @@ Concrete dialogue examples:
 >
 > 1) base_url 알려주세요 (예: `https://yourcorp.atlassian.net`):
 >
-> [user pastes] →
-> Atlassian MCP가 붙어있어요. 추적 가능한 프로젝트 목록 받아올까요? (y/n)
+> [user pastes] → Atlassian MCP가 붙어있어요. 추적 가능한 프로젝트 목록 받아올까요? (y/n)
 >
 > [if yes, call getAccessibleAtlassianResources + getVisibleJiraProjects, render]
 >
@@ -108,8 +189,7 @@ Concrete dialogue examples:
 >
 > 어느 디렉토리들 추적할까요? 한 줄에 하나씩 또는 콤마로:
 >
-> [user types] →
-> 검증 중... ✓ 3개 모두 존재
+> [user types] → 검증 중... ✓ 3개 모두 존재
 >
 > (혹시 1개 존재 안 하면) ✗ `/home/x/missing` — 디렉토리가 없네요. 다른 경로?
 
@@ -120,7 +200,7 @@ Concrete dialogue examples:
 >
 > [user picks from menu]
 
-### 4. Aggregate env-var requirements
+### 3.4 Aggregate env-var requirements
 
 After all sources are done, list the `auth_env` references they need.
 Read the workspace's `.env` (if it exists) and split into "already
@@ -137,7 +217,7 @@ set" vs "missing":
 >
 > ⚠️ 시크릿은 제가 `.env`에 직접 안 씁니다. 위 라인들을 직접 추가해주세요.
 
-### 5. Show the diff and confirm
+### 3.5 Show the diff and confirm
 
 Render the YAML changes you're about to make (a unified diff, or the
 section that changes). Wait for explicit y/n.
@@ -157,10 +237,10 @@ section that changes). Wait for explicit y/n.
 >
 > 적용할까요? (y/n)
 
-If `n`, ask which part to revise and loop back.
+If `n`, ask which part to revise and loop back inside Branch 3.
 If `y`, write the file.
 
-### 6. Wrap up
+### 3.6 Wrap up the configure branch
 
 After writing:
 
@@ -171,7 +251,44 @@ After writing:
 > 2. ETL 실행: `python -m library.sources.run`
 > 3. (선택) L2 enrichment: `python -m library.enrichment`
 
-## Hard rules
+---
+
+## Branch 4 — Status check
+
+Gather and report all of these in one tidy block:
+
+1. **Active workspace** — `assisthub current`
+2. **Enabled sources** — parse `sources.yaml`, list `enabled: true` ones
+3. **Required env vars** — for each enabled source's `auth_env`, mark
+   ✓ if set in `<workspace>/.env`, ✗ if missing
+4. **Last sync per source** — read `<workspace>/sync_state.json`,
+   render as `source: <iso-timestamp>` (or "(never)")
+5. **Exports state** — count rows in `<workspace>/exports/graph/*.jsonl`
+6. **Recommendation** — if any source has missing env var, say so. If
+   sync_state is stale (>1 day), suggest re-running ETL. Otherwise
+   say everything looks healthy.
+
+> ## `<name>` 상태
+>
+> **활성 소스 (4)**: `github`, `github_issues`, `markdown_dirs`, `jira`
+>
+> **환경변수**:
+>   ✓ GITHUB_TOKEN, JIRA_EMAIL, JIRA_TOKEN
+>   ✗ (없음)
+>
+> **마지막 동기화**:
+>   - github         2026-05-06T14:22:11Z
+>   - github_issues  2026-05-06T14:22:13Z
+>   - jira           (한 번도 안 돌림)
+>   - markdown_dirs  2026-05-07T09:01:55Z
+>
+> **Export rows**: Issue 14, Note 8, Concept 12, mentions 31
+>
+> **추천**: jira 첫 ETL 실행 — `python -m library.sources.run --source jira`
+
+---
+
+## Hard rules (apply to all branches)
 
 - **Never write to `.env`.** Credentials stay in the user's hands —
   print the lines they need to add and stop. Even if asked, refuse and
@@ -183,7 +300,7 @@ After writing:
   pointer style, and field ordering as they were in the template.
 - **Validate before recording.** Path doesn't exist → ask again. URL
   unreachable → flag it (don't fail, but tell the user).
-- **One source at a time.** Don't ask 5 fields in one block.
+- **One source / one field at a time.** Don't ask 5 things in one block.
 - **Bail gracefully.** If the user says "skip" / "cancel" / "stop",
   acknowledge and exit without writing.
 

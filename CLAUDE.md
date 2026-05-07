@@ -23,8 +23,7 @@ assisthub list           # list workspaces (* marks active)
 
 | Skill | Purpose | When to use |
 |-------|---------|-------------|
-| [`new-workspace.md`](./new-workspace.md) | Create a new workspace repo (local + private GitHub) | Bootstrap a new context (work / personal / per-project) |
-| [`configure-sources.md`](./configure-sources.md) | Interactively fill the active workspace's `sources.yaml` | After `/new-workspace`, or to add/modify data sources later |
+| [`ws-config.md`](./ws-config.md) | Workspace lifecycle — create / switch / configure sources / status | Setting up a new context, adding data sources, or checking workspace health |
 | [`briefing.md`](./briefing.md) | Session-start summary (open issues, PRs, blockers) | Begin of session, or when re-orienting mid-session |
 | [`act.md`](./act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
 | [`search.md`](./search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
@@ -58,7 +57,7 @@ assisthub list           # list workspaces (* marks active)
 |------|------|
 | `scripts/setup.sh` | Bootstrap a fresh laptop (clone + hooks + venv + session restore) |
 | `scripts/assisthub` | Active-workspace switcher CLI (use / current / list / unset) |
-| `scripts/new-workspace.sh` | Workspace bootstrap (called by `/new-workspace`) |
+| `scripts/new-workspace.sh` | Workspace bootstrap mechanics (git init, gh repo create, hooks). Invoked by `/ws-config`. |
 | `scripts/install-hooks.sh` | Copy git hooks into a target repo |
 | `scripts/hooks/{pre-commit,pre-push}` | Block secrets / `.env` from being committed or pushed |
 | `scripts/sync-session.sh` | Snapshot Claude Code session jsonl into the workspace `sessions/` |
@@ -71,7 +70,7 @@ assisthub list           # list workspaces (* marks active)
 ./scripts/setup.sh <workspace>
 
 # New workspace
-./scripts/new-workspace.sh <name>            # then /configure-sources
+./scripts/new-workspace.sh <name>            # raw script; or use /ws-config for the full conversational flow
 
 # Refresh graph from configured sources
 python -m library.sources.run                # delta sync (uses sync_state)
