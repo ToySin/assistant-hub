@@ -36,6 +36,17 @@ DEFINE TABLE IF NOT EXISTS Concept SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS name ON Concept TYPE string;
 DEFINE INDEX IF NOT EXISTS concept_name ON Concept FIELDS name UNIQUE;
 
+-- Notes are raw inputs (Markdown files, Notion pages, Obsidian vault entries).
+-- They are not work items themselves; L2 enrichment distills action items
+-- out of their bodies into Issue nodes, linked back via extracted_from.
+DEFINE TABLE IF NOT EXISTS Note SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS source      ON Note TYPE string;          -- 'markdown_dirs' | 'notion' | 'obsidian'
+DEFINE FIELD IF NOT EXISTS path        ON Note TYPE string;          -- absolute file path or external id
+DEFINE FIELD IF NOT EXISTS title       ON Note TYPE string;
+DEFINE FIELD IF NOT EXISTS body        ON Note TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS modified_at ON Note TYPE option<string>;  -- ISO-8601 UTC
+DEFINE INDEX IF NOT EXISTS note_path ON Note FIELDS source, path UNIQUE;
+
 DEFINE TABLE IF NOT EXISTS assigned_to TYPE RELATION FROM Person   TO Issue    SCHEMAFULL;
 DEFINE TABLE IF NOT EXISTS authored    TYPE RELATION FROM Person   TO GitHubPR SCHEMAFULL;
 DEFINE TABLE IF NOT EXISTS implements  TYPE RELATION FROM GitHubPR TO Issue    SCHEMAFULL;
@@ -46,6 +57,11 @@ DEFINE TABLE IF NOT EXISTS mentions    TYPE RELATION FROM Issue    TO Concept  S
 DEFINE FIELD IF NOT EXISTS confidence   ON mentions TYPE float;
 DEFINE FIELD IF NOT EXISTS provenance   ON mentions TYPE string;
 DEFINE FIELD IF NOT EXISTS extracted_by ON mentions TYPE string;
+
+-- L2 provenance: Issues synthesized from a Note's body link back to that Note.
+DEFINE TABLE IF NOT EXISTS extracted_from TYPE RELATION FROM Issue TO Note SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS confidence   ON extracted_from TYPE float;
+DEFINE FIELD IF NOT EXISTS extracted_by ON extracted_from TYPE string;
 
 DEFINE INDEX IF NOT EXISTS issue_embedding_hnsw ON Issue
     FIELDS embedding HNSW DIMENSION 8 DIST COSINE TYPE F32;

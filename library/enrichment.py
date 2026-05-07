@@ -1,20 +1,27 @@
-"""Layer 2 enrichment — extract concepts from Issue text via Claude.
+"""Layer 2 enrichment — distill structured signal out of free text via Claude.
 
-Reads every Issue's title + body, asks Claude for a list of concepts
-with confidence scores, and writes them into the graph as
-`Issue -> mentions -> Concept` edges. The `mentions` edge already has
-provenance / confidence / extracted_by fields in the schema; this
-module is the pipeline that fills them.
+Two extraction modes share the same module:
 
-Auth: reads ANTHROPIC_API_KEY from the workspace's .env (preferred)
-or process environment.
+1. **Concept extraction from Issues.** For each existing Issue, ask
+   Claude for the technical/domain concepts referenced in title+body and
+   write them as `Issue -> mentions -> Concept` edges with provenance.
+
+2. **Action item + concept extraction from Notes.** For each Note, ask
+   Claude for (a) the same kinds of concepts, plus (b) explicit action
+   items that the note's author has written down. Each action item
+   becomes a synthesized Issue (`source='note'`) linked back to the
+   originating Note via an `extracted_from` edge. From this point on the
+   action item is a first-class Issue and is picked up by /briefing,
+   /act, /search etc. without further work.
+
+Auth: reads ANTHROPIC_API_KEY from the workspace's .env or process env.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from anthropic import Anthropic
 
@@ -30,15 +37,11 @@ def _model() -> str:
     Default is haiku-4-5 — the work is structured extraction, not reasoning."""
     return os.environ.get("ASSISTHUB_ENRICHMENT_MODEL", DEFAULT_MODEL)
 
-SYSTEM_PROMPT = """You extract key concepts from work-tracking issue bodies.
 
-For each input, return a JSON array of objects:
-  [{"name": "<concept>", "confidence": <0.0-1.0>}]
-
-Concepts should be:
-- Technical components / services / technologies (e.g., "Redis", "HPA", "SurrealDB")
-- Domain concepts specific to the work (e.g., "auto-sync", "session continuity", "ETL pipeline")
-- Specific tools / libraries / commands (e.g., "Anthropic SDK", "/briefing", "gh CLI")
+CONCEPT_RULES = """Concepts are:
+- Technical components / services / technologies (e.g. "Redis", "HPA", "SurrealDB")
+- Domain concepts specific to the work (e.g. "auto-sync", "session continuity")
+- Specific tools / libraries / commands (e.g. "Anthropic SDK", "/briefing", "gh CLI")
 
 NOT:
 - Generic words ("issue", "TODO", "feature", "system")
@@ -48,21 +51,65 @@ NOT:
 Confidence rubric:
 - 0.95+ for explicit verbatim mentions
 - 0.7-0.9 for clearly inferred concepts
-- below 0.7 only when the connection is ambiguous
+- below 0.7 only when the connection is ambiguous"""
+
+
+ISSUE_SYSTEM_PROMPT = f"""You extract key concepts from work-tracking issue bodies.
+
+Return a JSON array:
+  [{{"name": "<concept>", "confidence": <0.0-1.0>}}]
+
+{CONCEPT_RULES}
 
 Return ONLY the JSON array. No prose, no code fences. Empty array if nothing clear.
+"""
+
+
+NOTE_SYSTEM_PROMPT = f"""You extract structured signal from a personal note.
+
+Return a JSON object:
+{{
+  "concepts": [{{"name": "<concept>", "confidence": <0.0-1.0>}}],
+  "action_items": [
+    {{
+      "title": "<concise imperative phrase, max 80 chars>",
+      "status": "open" | "done",
+      "confidence": <0.0-1.0>
+    }}
+  ]
+}}
+
+Concept rules:
+{CONCEPT_RULES}
+
+Action item rules — only items the author wrote *as an action they need to
+take*. Strong signals: explicit "TODO:", checkbox lines (`- [ ]`, `- [x]`),
+imperative phrases ("ask Bob about ...", "fix Y by Friday", "follow up on Z").
+Mark `status: "done"` for already-completed items (e.g. `- [x]`).
+
+NOT action items:
+- Vague intentions or musings ("I should think about ...")
+- Observations or notes-to-self that aren't asks
+- Items already completed and clearly archived (unless an explicit `- [x]`)
+
+If the note has no clear action items, return an empty list. Same for concepts.
+
+Return ONLY the JSON object. No prose, no code fences.
 """
 
 
 @dataclass
 class Stats:
     issues_processed: int = 0
+    notes_processed: int = 0
     concepts_extracted: int = 0
+    action_items_extracted: int = 0
     edges_created: int = 0
+    errors: list[str] = field(default_factory=list)
 
 
 def enrich(workspace: str | None = None) -> Stats:
-    """Run extraction over all Issues in the active workspace's graph."""
+    """Run extraction over Issues and Notes in the active workspace's graph."""
     _load_dotenv(get_workspace_path(workspace) / ".env")
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -76,54 +123,149 @@ def enrich(workspace: str | None = None) -> Stats:
     extracted_by = f"library.enrichment-{model}"
     db = builder.connect(workspace)
 
-    issues = db.query(
-        "SELECT id, source, external_key, title, body FROM Issue;"
-    )
-
     stats = Stats()
-    for issue in issues:
-        body = issue.get("body") or ""
-        text = f"{issue['title']}\n\n{body}".strip()
-        if not text:
-            continue
-        try:
-            concepts = _extract_concepts(client, model, text)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[enrichment] skip {issue['external_key']}: {exc}")
-            continue
-        stats.issues_processed += 1
-        for concept in concepts:
-            name = (concept.get("name") or "").strip()
-            if not name:
-                continue
-            concept_id = builder.upsert_concept(db, name)
-            builder.relate(
-                db, issue["id"], "mentions", concept_id,
-                confidence=float(concept.get("confidence", 0.7)),
-                provenance="extracted",
-                extracted_by=extracted_by,
-            )
-            stats.concepts_extracted += 1
-            stats.edges_created += 1
-
+    _enrich_issues(client, model, db, extracted_by, stats)
+    _enrich_notes(client, model, db, extracted_by, stats)
     return stats
 
 
-def _extract_concepts(client: Anthropic, model: str, text: str) -> list[dict]:
+# ---------- Issue path (concepts only) ----------
+
+def _enrich_issues(client, model, db, extracted_by, stats: Stats) -> None:
+    issues = db.query("SELECT id, source, external_key, title, body FROM Issue;")
+    for issue in issues or []:
+        # Skip Issues we synthesized from Notes — re-running enrichment over
+        # them would double-extract concepts that already came from the source
+        # note's pass.
+        if issue.get("source") == "note":
+            continue
+        text = _join_text(issue.get("title"), issue.get("body"))
+        if not text:
+            continue
+        try:
+            concepts = _call_concepts(client, model, text)
+        except Exception as exc:  # noqa: BLE001
+            stats.errors.append(f"issue {issue.get('external_key')}: {exc}")
+            continue
+        stats.issues_processed += 1
+        _attach_concepts(db, issue["id"], concepts, extracted_by, stats)
+
+
+# ---------- Note path (concepts + action items) ----------
+
+def _enrich_notes(client, model, db, extracted_by, stats: Stats) -> None:
+    notes = db.query("SELECT id, source, path, title, body FROM Note;")
+    for note in notes or []:
+        text = _join_text(note.get("title"), note.get("body"))
+        if not text:
+            continue
+        try:
+            payload = _call_note(client, model, text)
+        except Exception as exc:  # noqa: BLE001
+            stats.errors.append(f"note {note.get('path')}: {exc}")
+            continue
+        stats.notes_processed += 1
+
+        # Concepts the LLM extracted from the note are not attached to the
+        # Note itself — schema has no Note->Concept edge yet. They get
+        # attached to each synthesized Issue below instead, since the
+        # action items inherit the note's topical context.
+
+        for item in payload.get("action_items") or []:
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+            confidence = float(item.get("confidence", 0.7))
+            status = (item.get("status") or "open").strip().lower()
+            if status not in ("open", "done"):
+                status = "open"
+
+            external_key = _action_item_key(note.get("path"), title)
+            issue_id = builder.upsert_issue(
+                db,
+                source="note",
+                external_key=external_key,
+                title=title,
+                status=status,
+                body=None,
+            )
+            builder.relate(
+                db, issue_id, "extracted_from", note["id"],
+                confidence=confidence,
+                extracted_by=extracted_by,
+            )
+            _attach_concepts(
+                db, issue_id, payload.get("concepts") or [],
+                extracted_by, stats,
+            )
+            stats.action_items_extracted += 1
+            stats.edges_created += 1
+
+
+def _action_item_key(note_path: str | None, title: str) -> str:
+    """Stable identifier so re-running enrichment doesn't duplicate Issues.
+
+    Uses the note path + a slug of the title. Schema's UNIQUE index on
+    (source, external_key) does the dedup.
+    """
+    base = note_path or "_unknown"
+    return f"{base}#{builder._slugify(title)}"  # noqa: SLF001
+
+
+# ---------- shared helpers ----------
+
+def _join_text(title: str | None, body: str | None) -> str:
+    return f"{title or ''}\n\n{body or ''}".strip()
+
+
+def _attach_concepts(
+    db, target_id, concepts: list[dict],
+    extracted_by: str, stats: Stats,
+) -> None:
+    for concept in concepts:
+        name = (concept.get("name") or "").strip()
+        if not name:
+            continue
+        concept_id = builder.upsert_concept(db, name)
+        builder.relate(
+            db, target_id, "mentions", concept_id,
+            confidence=float(concept.get("confidence", 0.7)),
+            provenance="extracted",
+            extracted_by=extracted_by,
+        )
+        stats.concepts_extracted += 1
+        stats.edges_created += 1
+
+
+def _call_concepts(client: Anthropic, model: str, text: str) -> list[dict]:
+    raw = _ask(client, model, ISSUE_SYSTEM_PROMPT, text)
+    parsed = _parse_json(raw)
+    return parsed if isinstance(parsed, list) else []
+
+
+def _call_note(client: Anthropic, model: str, text: str) -> dict:
+    raw = _ask(client, model, NOTE_SYSTEM_PROMPT, text)
+    parsed = _parse_json(raw)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _ask(client: Anthropic, model: str, system_prompt: str, user_text: str) -> str:
     resp = client.messages.create(
         model=model,
-        max_tokens=1024,
+        max_tokens=2048,
         system=[
             {
                 "type": "text",
-                "text": SYSTEM_PROMPT,
+                "text": system_prompt,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
-        messages=[{"role": "user", "content": text}],
+        messages=[{"role": "user", "content": user_text}],
     )
-    content = resp.content[0].text.strip()
-    # Tolerate occasional code-fence wrapping
+    return resp.content[0].text.strip()
+
+
+def _parse_json(content: str):
     if content.startswith("```"):
         first_newline = content.find("\n")
         if first_newline != -1:

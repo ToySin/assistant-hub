@@ -135,6 +135,38 @@ def upsert_project(db: Surreal, key: str, name: str) -> RecordID:
     return _first_id(res)
 
 
+def _note_thing_id(source: str, path: str) -> str:
+    return _slugify(f"{source}_{path}")
+
+
+def upsert_note(
+    db: Surreal,
+    source: str,
+    path: str,
+    title: str,
+    body: str | None = None,
+    modified_at: str | None = None,
+) -> RecordID:
+    """Upsert a Note (raw input — markdown file, Notion page, ...).
+
+    Notes are not work items; they feed L2 enrichment which extracts
+    Issue nodes from their bodies. `source` is the adapter name
+    ('markdown_dirs', 'notion', 'obsidian'); `path` is whatever uniquely
+    identifies the note inside that source (filesystem path, Notion id)."""
+    thing_id = _note_thing_id(source, path)
+    res = db.query(
+        """
+        UPSERT type::thing('Note', $thing_id)
+        SET source = $source, path = $path, title = $title,
+            body = $body, modified_at = $modified_at
+        RETURN id;
+        """,
+        {"thing_id": thing_id, "source": source, "path": path,
+         "title": title, "body": body, "modified_at": modified_at},
+    )
+    return _first_id(res)
+
+
 def upsert_concept(db: Surreal, name: str) -> RecordID:
     slug = _slugify(name)
     res = db.query(

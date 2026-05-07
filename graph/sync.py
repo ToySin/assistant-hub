@@ -13,10 +13,10 @@ from surrealdb import RecordID, Surreal
 
 from library.workspace import get_workspace_export_dir
 
-NODE_TABLES = ("Person", "Issue", "GitHubPR", "Project", "Concept")
+NODE_TABLES = ("Person", "Issue", "GitHubPR", "Project", "Concept", "Note")
 EDGE_TABLES = (
     "assigned_to", "authored", "implements",
-    "belongs_to", "blocked_by", "mentions",
+    "belongs_to", "blocked_by", "mentions", "extracted_from",
 )
 
 
