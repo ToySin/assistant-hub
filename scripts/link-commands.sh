@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Populate a workspace's .claude/commands/ with relative symlinks to
-# assistant-hub's source-of-truth slash command files.
+# Populate a workspace's .claude/{commands,skills}/ with relative symlinks
+# to assistant-hub's source-of-truth slash command files and the helper
+# documents those commands delegate into (e.g. ws-config branch files).
 #
-# Idempotent — re-running picks up any new commands and refreshes any
-# stale symlinks. Existing files (non-symlinks) are left alone.
+# Idempotent — re-running picks up any new commands/skills and refreshes
+# stale symlinks. Existing non-symlink files are left alone.
 #
 # Usage:
 #   link-commands.sh                # link into the cwd
@@ -12,32 +13,52 @@
 set -euo pipefail
 
 HUB_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC_DIR="$HUB_ROOT/.claude/commands"
 
 TARGET="${1:-.}"
 TARGET="$(cd "$TARGET" && pwd)"
 
-if [[ ! -d "$SRC_DIR" ]]; then
-    echo "ERROR: source dir missing: $SRC_DIR" >&2
-    exit 1
-fi
+# Per-file symlinks for .claude/commands/ — the directory itself stays
+# real so the workspace can later add its own private commands without
+# pulling in everything from upstream.
+link_commands() {
+    local src_dir="$HUB_ROOT/.claude/commands"
+    local dest_dir="$TARGET/.claude/commands"
+    [[ -d "$src_dir" ]] || return 0
+    mkdir -p "$dest_dir"
+    local rel
+    rel="$(realpath --relative-to="$dest_dir" "$src_dir")"
+    for src in "$src_dir"/*.md; do
+        [[ -e "$src" ]] || continue
+        local name dest
+        name="$(basename "$src")"
+        dest="$dest_dir/$name"
+        if [[ -L "$dest" || ! -e "$dest" ]]; then
+            ln -sfn "$rel/$name" "$dest"
+            echo "linked: commands/$name"
+        else
+            echo "skip:   commands/$name (existing non-symlink)"
+        fi
+    done
+}
 
-DEST_DIR="$TARGET/.claude/commands"
-mkdir -p "$DEST_DIR"
-
-# Compute the relative path from the workspace's .claude/commands to the
-# source. e.g. ../../../assistant-hub/.claude/commands when both repos
-# are siblings under ~/repositories/.
-REL="$(realpath --relative-to="$DEST_DIR" "$SRC_DIR")"
-
-for src in "$SRC_DIR"/*.md; do
-    [[ -e "$src" ]] || continue
-    name="$(basename "$src")"
-    dest="$DEST_DIR/$name"
-    if [[ -L "$dest" || ! -e "$dest" ]]; then
-        ln -sfn "$REL/$name" "$dest"
-        echo "linked: $name -> $REL/$name"
-    else
-        echo "skip:   $name (existing non-symlink)"
+# Whole-directory symlink for .claude/skills/ — these are private helper
+# documents the slash commands delegate into. We don't expect workspaces
+# to add their own sub-skills here, so a single dir symlink keeps things
+# tidy and any new sub-skill in the upstream tree appears automatically.
+link_skills() {
+    local src_dir="$HUB_ROOT/.claude/skills"
+    local dest="$TARGET/.claude/skills"
+    [[ -d "$src_dir" ]] || return 0
+    mkdir -p "$TARGET/.claude"
+    local rel
+    rel="$(realpath --relative-to="$TARGET/.claude" "$src_dir")"
+    if [[ -e "$dest" && ! -L "$dest" ]]; then
+        echo "skip:   skills/ (existing non-symlink directory)"
+        return 0
     fi
-done
+    ln -sfn "$rel" "$dest"
+    echo "linked: skills -> $rel"
+}
+
+link_commands
+link_skills
