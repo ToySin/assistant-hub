@@ -156,4 +156,4 @@ adapters; add them and open a PR if you'd like them upstream.
 
 ## License
 
-TBD.
+[MIT](./LICENSE).
