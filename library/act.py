@@ -23,12 +23,10 @@ from library.issue_format import format_issue_line, pick_source_note
 
 PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
-CLOSED_STATUSES = {
-    "closed", "done", "resolved", "complete", "completed",
-    "stale",  # set by `enrichment --prune-stale` when an extracted action item
-              # is no longer in the source note. Stale items shouldn't surface
-              # in /act's priority queue.
-}
+# Filter by Atlassian's universal status_category instead of the localized
+# `status` string — keeps act locale-agnostic. Anything outside this set
+# (done, stale-via-extra-state, undefined-stub) is skipped.
+ACTIONABLE_CATEGORIES = {"new", "indeterminate"}
 
 
 @dataclass
@@ -64,7 +62,7 @@ def assess(workspace: str | None = None) -> Assessment:
     rows = db.query(
         """
         SELECT
-            source, external_key, title, status,
+            source, external_key, title, status, status_category,
             ->blocked_by->Issue.external_key AS blocked_by,
             <-blocked_by<-Issue.external_key AS blocks,
             <-implements<-GitHubPR.uid       AS prs,
@@ -75,8 +73,7 @@ def assess(workspace: str | None = None) -> Assessment:
 
     recs: list[Recommendation] = []
     for row in rows:
-        status = (row.get("status") or "").lower()
-        if status in CLOSED_STATUSES:
+        if (row.get("status_category") or "undefined") not in ACTIONABLE_CATEGORIES:
             continue
         priority, reasons = _classify(row)
         recs.append(Recommendation(

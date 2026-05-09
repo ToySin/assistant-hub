@@ -13,13 +13,23 @@ DEFINE FIELD IF NOT EXISTS name ON Person TYPE string;
 DEFINE INDEX IF NOT EXISTS person_name ON Person FIELDS name UNIQUE;
 
 DEFINE TABLE IF NOT EXISTS Issue SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS source       ON Issue TYPE string;          -- 'jira' | 'github'
-DEFINE FIELD IF NOT EXISTS external_key ON Issue TYPE string;          -- 'SYS-123' or 'ToySin/repo#42'
-DEFINE FIELD IF NOT EXISTS title        ON Issue TYPE string;
-DEFINE FIELD IF NOT EXISTS status       ON Issue TYPE string;
-DEFINE FIELD IF NOT EXISTS body         ON Issue TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS embedding    ON Issue TYPE option<array<float>>;
+DEFINE FIELD IF NOT EXISTS source          ON Issue TYPE string;       -- 'jira' | 'github' | 'note'
+DEFINE FIELD IF NOT EXISTS external_key    ON Issue TYPE string;       -- 'SYS-123' or 'ToySin/repo#42'
+DEFINE FIELD IF NOT EXISTS title           ON Issue TYPE string;
+-- `status` is the source's display label ("In Progress", "완료", "Won't Do") —
+-- localized, custom-workflow-dependent. For filter logic use `status_category`,
+-- which maps to Atlassian's universal vocabulary plus our additions:
+--   new           — backlog / todo / not started
+--   indeterminate — in progress / in review / actively worked on
+--   done          — closed / resolved / won't-do / cancelled
+--   undefined     — stub or unknown (e.g. Issue created via cross-reference
+--                   from a PR whose source project we don't fetch)
+DEFINE FIELD IF NOT EXISTS status          ON Issue TYPE string;
+DEFINE FIELD IF NOT EXISTS status_category ON Issue TYPE string DEFAULT "undefined";
+DEFINE FIELD IF NOT EXISTS body            ON Issue TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS embedding       ON Issue TYPE option<array<float>>;
 DEFINE INDEX IF NOT EXISTS issue_external ON Issue FIELDS source, external_key UNIQUE;
+DEFINE INDEX IF NOT EXISTS issue_status_category ON Issue FIELDS status_category;
 
 DEFINE TABLE IF NOT EXISTS GitHubPR SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS uid   ON GitHubPR TYPE string;

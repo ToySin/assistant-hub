@@ -153,6 +153,10 @@ def _load_issues(db: Surreal, issues: list[dict],
 
         new_title = _safe(f, "summary")
         new_status = _safe(f, "status", "name")
+        # Atlassian's universal status vocabulary — same across languages
+        # and custom workflows. Maps every Jira status to one of:
+        # new / indeterminate / done / undefined.
+        new_status_category = _safe(f, "status", "statusCategory", "key") or "undefined"
         prior = monitor.read_issue_state(db, "jira", key)
         issue_id = builder.upsert_issue(
             db,
@@ -160,6 +164,7 @@ def _load_issues(db: Surreal, issues: list[dict],
             external_key=key,
             title=new_title,
             status=new_status,
+            status_category=new_status_category,
             body=_extract_description(f.get("description")),
         )
         monitor.emit_issue_diff(

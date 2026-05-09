@@ -104,10 +104,15 @@ def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
     project_id = builder.upsert_project(db, key=repo, name=repo)
     docs: list[dict] = []
 
+    # GitHub issues only have open/closed, no in-review/blocked. Map open
+    # to indeterminate (actively trackable) and closed to done.
+    GH_STATE_TO_CATEGORY = {"open": "indeterminate", "closed": "done"}
+
     for issue in issues:
         external_key = f"{repo}#{issue['number']}"
         new_title = issue.get("title") or ""
         new_status = (issue.get("state") or "").lower()
+        new_status_category = GH_STATE_TO_CATEGORY.get(new_status, "undefined")
 
         prior = monitor.read_issue_state(db, "github", external_key)
         issue_id = builder.upsert_issue(
@@ -116,6 +121,7 @@ def _load_issues(db: Surreal, repo: str, issues: list[dict]) -> SyncStats:
             external_key=external_key,
             title=new_title,
             status=new_status,
+            status_category=new_status_category,
             body=issue.get("body") or None,
         )
         monitor.emit_issue_diff(

@@ -56,29 +56,38 @@ def _issue_thing_id(source: str, external_key: str) -> str:
     return _slugify(f"{source}_{external_key}")
 
 
+VALID_STATUS_CATEGORIES = {"new", "indeterminate", "done", "undefined"}
+
+
 def upsert_issue(
     db: Surreal,
     source: str,
     external_key: str,
     title: str,
     status: str,
+    status_category: str = "undefined",
     body: str | None = None,
     embedding: list[float] | None = None,
 ) -> RecordID:
-    """Upsert a tracked work item from any source. `source` is the origin
-    system ('jira' or 'github'); `external_key` is that system's native
-    identifier (e.g. 'SYS-123' or 'ToySin/repo#42'). The pair is unique."""
+    """Upsert a tracked work item from any source. `status` is the source's
+    display label (often localized); `status_category` is Atlassian's
+    universal vocabulary {new, indeterminate, done, undefined} used for
+    filter logic so /briefing and /act work across languages."""
+    if status_category not in VALID_STATUS_CATEGORIES:
+        status_category = "undefined"
     thing_id = _issue_thing_id(source, external_key)
     res = db.query(
         """
         UPSERT type::thing('Issue', $thing_id)
         SET source = $source, external_key = $external_key,
             title = $title, status = $status,
+            status_category = $status_category,
             body = $body, embedding = $embedding
         RETURN id;
         """,
         {"thing_id": thing_id, "source": source, "external_key": external_key,
-         "title": title, "status": status, "body": body, "embedding": embedding},
+         "title": title, "status": status, "status_category": status_category,
+         "body": body, "embedding": embedding},
     )
     return _first_id(res)
 
@@ -103,7 +112,8 @@ def ensure_issue(db: Surreal, source: str, external_key: str) -> RecordID:
         """
         CREATE type::thing('Issue', $thing_id)
         SET source = $source, external_key = $external_key,
-            title = '(stub)', status = 'Unknown'
+            title = '(stub)', status = 'Unknown',
+            status_category = 'undefined'
         RETURN id;
         """,
         {"thing_id": thing_id, "source": source, "external_key": external_key},

@@ -37,12 +37,15 @@ def collect(workspace: str | None = None) -> Briefing:
 
     db = builder.connect(workspace)
 
+    # Filter by Atlassian's universal status_category (works across
+    # locales / custom workflows). Skip stubs (undefined) — those are
+    # cross-references from PRs we haven't fetched bodies for, not
+    # actionable. Skip done. Keep new + indeterminate.
     issue_rows = db.query(
-        "SELECT source, external_key, title, status, "
+        "SELECT source, external_key, title, status, status_category, "
         "->extracted_from->Note.title AS source_note_titles "
         "FROM Issue "
-        "WHERE string::lowercase(status) NOT IN "
-        "['closed', 'done', 'resolved', 'complete', 'completed', 'stale'] "
+        "WHERE status_category IN ['new', 'indeterminate'] "
         "ORDER BY source, external_key;"
     )
 
