@@ -81,7 +81,7 @@ cp -R "$TEMPLATE_DIR" "$TARGET_DIR"
 
 # Substitute placeholders in text files
 find "$TARGET_DIR" -type f \( -name '*.md' -o -name '*.yaml' \) -print0 \
-  | xargs -0 sed -i "s/{{WORKSPACE_NAME}}/$NAME/g"
+  | xargs -0 perl -i -pe "s/\{\{WORKSPACE_NAME\}\}/$NAME/g"
 
 # --- Init git ---
 echo "==> Initializing git"

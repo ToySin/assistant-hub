@@ -17,6 +17,16 @@ HUB_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET="${1:-.}"
 TARGET="$(cd "$TARGET" && pwd)"
 
+# Portable `realpath --relative-to` — BSD realpath (macOS default) lacks it.
+relpath() {
+    local from="$1" to="$2"
+    if command -v grealpath >/dev/null 2>&1; then
+        grealpath --relative-to="$from" "$to"
+    else
+        python3 -c 'import os, sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))' "$from" "$to"
+    fi
+}
+
 # Per-file symlinks for .claude/commands/ — the directory itself stays
 # real so the workspace can later add its own private commands without
 # pulling in everything from upstream.
@@ -26,7 +36,7 @@ link_commands() {
     [[ -d "$src_dir" ]] || return 0
     mkdir -p "$dest_dir"
     local rel
-    rel="$(realpath --relative-to="$dest_dir" "$src_dir")"
+    rel="$(relpath "$dest_dir" "$src_dir")"
     for src in "$src_dir"/*.md; do
         [[ -e "$src" ]] || continue
         local name dest
@@ -51,7 +61,7 @@ link_skills() {
     [[ -d "$src_dir" ]] || return 0
     mkdir -p "$TARGET/.claude"
     local rel
-    rel="$(realpath --relative-to="$TARGET/.claude" "$src_dir")"
+    rel="$(relpath "$TARGET/.claude" "$src_dir")"
     if [[ -e "$dest" && ! -L "$dest" ]]; then
         echo "skip:   skills/ (existing non-symlink directory)"
         return 0
