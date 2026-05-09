@@ -44,10 +44,37 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
     full = bool(settings.get("full"))
 
     stats = SyncStats()
+    if len(repos) <= 1:
+        for repo in repos:
+            since = None if full else sync_state.get(SOURCE_NAME, scope=repo)
+            started = sync_state.now_iso()
+            issues = _fetch_issues(repo, state=state, limit=limit, since=since)
+            stats = _merge(stats, _load_issues(db, repo, issues))
+            sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
+        return stats
+
+    # Parallel fetch (gh API per repo is the slow leg); serialized load
+    # so DB writes go through the shared connection in turn.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    plan = []  # (repo, since, started)
     for repo in repos:
         since = None if full else sync_state.get(SOURCE_NAME, scope=repo)
-        started = sync_state.now_iso()
-        issues = _fetch_issues(repo, state=state, limit=limit, since=since)
+        plan.append((repo, since, sync_state.now_iso()))
+
+    fetched: list[tuple[str, str, list[dict]]] = []  # (repo, started, issues)
+    with ThreadPoolExecutor(max_workers=min(8, len(repos))) as pool:
+        futures = {
+            pool.submit(_fetch_issues, repo, state=state, limit=limit, since=since): (repo, started)
+            for repo, since, started in plan
+        }
+        for fut in as_completed(futures):
+            repo, started = futures[fut]
+            try:
+                fetched.append((repo, started, fut.result()))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[github_issues] {repo} fetch failed: {exc}")
+    for repo, started, issues in fetched:
         stats = _merge(stats, _load_issues(db, repo, issues))
         sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
     return stats

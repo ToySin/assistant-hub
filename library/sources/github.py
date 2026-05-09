@@ -48,10 +48,37 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
     full = bool(settings.get("full"))
 
     stats = SyncStats()
-    for repo in repos:
-        since = None if full else sync_state.get(SOURCE_NAME, scope=repo)
-        started = sync_state.now_iso()
-        prs = _fetch_prs(repo, state=state, limit=limit, since=since)
+    if len(repos) <= 1:
+        for repo in repos:
+            since = None if full else sync_state.get(SOURCE_NAME, scope=repo)
+            started = sync_state.now_iso()
+            prs = _fetch_prs(repo, state=state, limit=limit, since=since)
+            stats = _merge_stats(stats, _load_prs(db, repo, prs, include_drafts))
+            sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
+        return stats
+
+    # Parallel fetch, serialized load — same pattern as github_issues.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    plan = [(repo,
+             None if full else sync_state.get(SOURCE_NAME, scope=repo),
+             sync_state.now_iso())
+            for repo in repos]
+
+    fetched: list[tuple[str, str, list[dict]]] = []
+    with ThreadPoolExecutor(max_workers=min(8, len(repos))) as pool:
+        futures = {
+            pool.submit(_fetch_prs, repo, state=state, limit=limit, since=since):
+                (repo, started)
+            for repo, since, started in plan
+        }
+        for fut in as_completed(futures):
+            repo, started = futures[fut]
+            try:
+                fetched.append((repo, started, fut.result()))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[github] {repo} fetch failed: {exc}")
+    for repo, started, prs in fetched:
         stats = _merge_stats(stats, _load_prs(db, repo, prs, include_drafts))
         sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
     return stats
