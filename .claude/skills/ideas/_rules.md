@@ -20,8 +20,13 @@
 
 - Path: `<workspace>/notes/ideas/<YYYY-MM-DD>-<slug>.md`
 - Frontmatter fields: `title`, `status`, `captured_at`, `effort`,
-  `tags`, `related`, `promoted_to`, `promoted_at`
-- Status state machine: `captured → refined → promoted`. No going back.
+  `tags`, `related`, `promoted_to`, `promoted_at`, `dismissed_at`
+- Status state machine:
+  - `captured → refined → promoted` — happy path
+  - `captured → dismissed` or `refined → dismissed` — explicit
+    "won't do" decision. Keep the markdown for history; add a
+    `## Decision` section explaining why.
+  - No state goes backward except via the user explicitly editing.
 
 ## Auto-trigger
 
