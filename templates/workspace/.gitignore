@@ -14,6 +14,9 @@ neo4j-data/
 # Per-machine sync state (regenerable, machine-local)
 sync_state.json
 
+# Review history (contains reviewer text + comment IDs — leak risk)
+review-history.yaml
+
 # Python
 __pycache__/
 *.py[cod]
