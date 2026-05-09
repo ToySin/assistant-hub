@@ -67,6 +67,15 @@ Show output, wait for explicit approval before any apply.
 - If `infrastructure.md` doesn't cover the target domain, stop and
   ask. Don't guess GCP project IDs from repo string-grepping.
 
+## Step 7. /save check
+
+If implementing this revealed something durable — module conventions,
+non-obvious constraints, gotchas — propose `/save` before ending:
+
+> 이번 작업에서 ~ 알게 됐는데 `knowledge/<topic>.md`에 정리할까요?
+
+Skip when the change was mechanical.
+
 ## Notes
 
 - For *investigating* an incident (not coding a fix), use `/debug`.

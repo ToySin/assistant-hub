@@ -9,14 +9,45 @@ dashboard / project state rather than knowledge accumulation.
 
 ## When to use proactively
 
-Watch for moments that *should* generate persistent knowledge:
-- Resolving an incident or unfamiliar problem ("ah it was X all along")
-- Discovering a non-obvious config / mapping / workflow
-- Establishing a new convention the user explicitly endorsed
-- A hub or external doc was hard to find — surface a pointer
+The user shouldn't have to remember to `/save`. **Always propose it
+yourself when one of these signals fires.** User confirms with one
+word; that's the only manual step.
 
-When you spot one, propose `/save` instead of letting the insight
-evaporate at session end.
+### A. Insight / resolution signals (mid-session)
+
+User sentences that mean "we just learned something durable":
+
+- "아 이게 ~ 때문이었네", "~였구나", "결국 ~ 문제였네"
+- "ah it was X", "that's why", "turns out"
+- "이게 ~에 있었구나", "~ 위치가 ~네"  → discovered a mapping / location
+- "다음에도 ~ 하려면 ~", "이 패턴 또 쓸 듯", "다음 번엔 ~로 가자"  → recipe forming
+- "이 컨벤션으로 통일하자", "앞으로는 ~로", "~ 안 하기로"  → new convention
+- A long debug session ended in "OK 됐다" / "이제 동작한다" — propose
+  capturing the diagnostic chain even if root cause is mundane
+
+### B. Session-end signals
+
+User signals they're wrapping up:
+
+- "끝", "이만", "그만", "오늘은 여기까지", "끄자", "마무리하자", "잠깐 정리하고 끊자"
+- "done", "wrap up", "let's stop", "see you", "that's it"
+
+On any of these, **before the user actually closes**, propose:
+
+> 끝나기 전에 짧게 정리할까요?
+> - 학습된 거: `/save`로 ~에 적용
+> - 작업 상태: `/checkpoint`로 dashboard 갱신
+>
+> 둘 다 / 하나만 / 그냥 끄기?
+
+Don't let a session close with insights uncommitted.
+
+### Anti-pattern
+
+Don't propose `/save` for:
+- Ephemeral debugging context (the error itself, stale state)
+- Single-use commands that don't generalize
+- Things the user already explicitly said "don't write this down"
 
 ## Procedure
 

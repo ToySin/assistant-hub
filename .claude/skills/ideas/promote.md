@@ -51,6 +51,16 @@ Show:
 - Confirmation that the markdown is now `promoted`
 - Confirmation that the lineage edge was created
 
+### Step 5. /save check
+
+If working through this idea revealed something durable (a
+convention, mapping, or recipe) — not just the issue body itself —
+propose `/save` before moving on:
+
+> 이거 발행하면서 ~ 알게 됐는데 `knowledge/`에도 정리할까요?
+
+Skip silently when the idea was self-contained.
+
 Suggest follow-ups only if useful — e.g., "now run `/briefing` to see
 it land in the open list".
 

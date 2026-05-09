@@ -7,6 +7,20 @@ compact, an interruption, or a laptop switch.
 For end-of-session knowledge persistence use `/save` instead — it
 targets static files (`knowledge/`, `runbooks/`), this targets *state*.
 
+## When to use proactively
+
+Propose `/checkpoint` (don't run silently) when the user signals a
+*pause* rather than an end:
+
+- "잠깐", "자리 좀 비울게", "노트북 옮길게", "다른 노트북에서 이어서"
+- Context window is filling (you can sense compaction is coming) —
+  prompt before it triggers, so working state survives
+- A long sub-task just finished and the next one is unrelated — good
+  pause point
+
+End-of-session (끝 / 이만 / 끄자) should propose **both** `/save` and
+`/checkpoint` together — see `save.md` for the menu pattern.
+
 ## Procedure
 
 ### Step 1. Update dashboard.yaml

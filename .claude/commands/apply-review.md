@@ -127,6 +127,17 @@ If commits were made, ask: "push할까요?" — never auto-push.
 If pushed, note the new commit URL in chat. Don't auto-merge even
 when CI is green; that's a separate `/check-review` decision.
 
+## Step 9. Suggest /save (if learning surfaced)
+
+If processing the review revealed something durable — a non-obvious
+convention the reviewer enforced, a recurring style nit worth
+codifying, a domain mapping you didn't know — propose `/save` before
+ending:
+
+> 이번 리뷰에서 ~ 학습한 게 있는데 `knowledge/<name>.md`에 정리할까요?
+
+Skip silently if the review was mechanical (typos, formatting only).
+
 ## Notes
 
 - One-line invariant: **never run `gh pr merge` from this skill**. This

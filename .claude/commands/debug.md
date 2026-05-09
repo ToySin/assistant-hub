@@ -52,20 +52,22 @@ expected effect, wait for `y`.
 
 Never run irreversible actions silently in auto mode.
 
-## Step 5. Post-investigation
+## Step 5. Post-investigation — propose /save immediately
 
-When the incident is resolved:
+When the incident is resolved, **don't wait for the user**. Propose
+`/save` right then:
 
-1. Add an entry to `<workspace>/runbooks/case-studies.md` if this
-   pattern is new — case / symptom / root cause / diagnostic queries
-   / resolution. (`/save` will propose this on session end if you
-   skip it now.)
-2. If the incident warrants a full postmortem (significant outage,
-   user-facing impact), draft `<workspace>/runbooks/postmortems/
-   YYYY-MM-DD-<slug>.md`. `/save` proposes this too.
-3. Consider a new runbook entry — if this is the first time you've
-   resolved this pattern, the resolution steps become a `semi-auto`
-   runbook on the next encounter (see `library/runbooks.py` lifecycle).
+> 해결됐네요. 정리할까요?
+> 1. `runbooks/case-studies.md`에 case/symptom/root cause/resolution 추가
+> 2. (영향 큰 인시던트면) `runbooks/postmortems/<date>-<slug>.md` 작성
+> 3. 첫 해결 패턴이면 `semi-auto` runbook 자동 생성 (`library/runbooks.py` 사이클)
+>
+> 어디까지 할까요?
+
+Don't auto-commit; the user picks.
+
+If the user says "skip" / "나중에", note it but proceed — `/save` at
+session end will surface the same options as a fallback.
 
 ## Notes
 
