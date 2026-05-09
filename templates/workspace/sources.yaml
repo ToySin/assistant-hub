@@ -1,7 +1,10 @@
 workspace: "{{WORKSPACE_NAME}}"
 
-# Data sources for this workspace. All sources start disabled — flip
-# `enabled: true` and fill required fields to include them in the graph.
+# Data sources for this workspace. External sources start disabled —
+# flip `enabled: true` and fill required fields to include them in the
+# graph. Local-only sources may be pre-enabled (currently:
+# `markdown_dirs` ships pointing at `notes/` so /idea capture lands in
+# the graph immediately).
 #
 # Secrets do NOT live in this file. `auth_env` points to an environment
 # variable (set in .env) that holds the credential.
@@ -88,8 +91,11 @@ sources:
     enabled: false
     vault_path: ""           # absolute path
   markdown_dirs:
-    enabled: false
-    paths: []                # any directories of .md files
+    # Pre-enabled so /idea capture writes land in the graph from day one.
+    # Add more paths to ingest other note collections (e.g. an Obsidian vault).
+    enabled: true
+    paths:
+      - ~/repositories/assisthub-ws-{{WORKSPACE_NAME}}/notes
   readwise:
     enabled: false
     auth_env: READWISE_TOKEN
