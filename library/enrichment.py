@@ -22,6 +22,7 @@ Ollama, or any other OpenAI-compatible endpoint.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 
 from graph import builder
@@ -99,6 +100,134 @@ class Stats:
     edges_created: int = 0
     stale_marked: int = 0
     errors: list[str] = field(default_factory=list)
+
+
+def list_targets(workspace: str | None = None, new_only: bool = True) -> dict:
+    """Collect Issues and Notes that need enrichment, as a JSON-friendly dict.
+
+    Backs the `/enrich` skill, where Claude Code itself plays the role of
+    the LLM and `enrichment.py` doesn't need an API key. `new_only`
+    (default) skips Issues already covered by a `mentions` edge and Notes
+    that already have any `extracted_from` edge — pass `new_only=False`
+    to re-extract over everything.
+    """
+    db = builder.connect(workspace)
+
+    issues_raw = db.query(
+        "SELECT id, source, external_key, title, body FROM Issue "
+        "WHERE source != 'note';"
+    ) or []
+    notes_raw = db.query(
+        "SELECT id, source, path, title, body FROM Note;"
+    ) or []
+
+    if new_only:
+        mentions = db.query("SELECT in FROM mentions;") or []
+        already_mentioned = {str(row["in"]) for row in mentions if row.get("in")}
+        issues_raw = [i for i in issues_raw
+                      if str(i.get("id")) not in already_mentioned]
+
+        extracted = db.query("SELECT out FROM extracted_from;") or []
+        already_extracted = {str(row["out"]) for row in extracted if row.get("out")}
+        notes_raw = [n for n in notes_raw
+                     if str(n.get("id")) not in already_extracted]
+
+    return {
+        "issues": [
+            {
+                "source": i.get("source"),
+                "external_key": i.get("external_key"),
+                "title": i.get("title") or "",
+                "body": i.get("body") or "",
+            }
+            for i in issues_raw
+        ],
+        "notes": [
+            {
+                "source": n.get("source"),
+                "path": n.get("path"),
+                "title": n.get("title") or "",
+                "body": n.get("body") or "",
+            }
+            for n in notes_raw
+        ],
+    }
+
+
+def apply_results(
+    payload: dict,
+    workspace: str | None = None,
+    extracted_by: str = "claude-code-skill",
+    prune_stale: bool = False,
+) -> Stats:
+    """Write pre-computed enrichment results to the graph.
+
+    Mirrors `enrich()` but skips the LLM call — concepts and action items
+    arrive in `payload`, produced upstream (typically by the `/enrich`
+    skill running inside a Claude Code session). Items are matched to
+    existing graph nodes by (source, external_key) for Issues and
+    (source, path) for Notes; missing nodes are reported in `errors`
+    rather than auto-created, since `targets` is the canonical source of
+    truth for what exists.
+    """
+    _load_dotenv(get_workspace_path(workspace) / ".env")
+    db = builder.connect(workspace)
+    stats = Stats()
+
+    for issue_payload in payload.get("issues") or []:
+        source = issue_payload.get("source")
+        external_key = issue_payload.get("external_key")
+        if not (source and external_key):
+            continue
+        issue_id = builder.ensure_issue(db, source, external_key)
+        _attach_concepts(db, issue_id, issue_payload.get("concepts") or [],
+                         extracted_by, stats)
+        stats.issues_processed += 1
+
+    for note_payload in payload.get("notes") or []:
+        source = note_payload.get("source")
+        path = note_payload.get("path")
+        if not (source and path):
+            continue
+        thing_id = builder._slugify(f"{source}_{path}")  # noqa: SLF001
+        existing = db.query(
+            "SELECT id FROM type::thing('Note', $thing_id);",
+            {"thing_id": thing_id},
+        )
+        note_id = builder._maybe_id(existing)  # noqa: SLF001
+        if note_id is None:
+            stats.errors.append(f"note not found: {source}:{path}")
+            continue
+
+        new_keys: set[str] = set()
+        for item in note_payload.get("action_items") or []:
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+            confidence = float(item.get("confidence", 0.7))
+            status = (item.get("status") or "open").strip().lower()
+            if status not in ("open", "done"):
+                status = "open"
+            external_key = _action_item_key(path, title)
+            new_keys.add(external_key)
+            issue_id = builder.upsert_issue(
+                db, source="note", external_key=external_key,
+                title=title, status=status, body=None,
+            )
+            builder.relate(
+                db, issue_id, "extracted_from", note_id,
+                confidence=confidence, extracted_by=extracted_by,
+            )
+            _attach_concepts(db, issue_id, note_payload.get("concepts") or [],
+                             extracted_by, stats)
+            stats.action_items_extracted += 1
+            stats.edges_created += 1
+
+        if prune_stale:
+            stats.stale_marked += _mark_stale(db, note_id, new_keys)
+        stats.notes_processed += 1
+
+    return stats
 
 
 def enrich(workspace: str | None = None,
@@ -294,18 +423,72 @@ def _parse_json(content: str):
 
 def main() -> None:
     import argparse
+
+    # Backwards-compat: `python -m library.enrichment` and
+    # `python -m library.enrichment --prune-stale` (no subcommand) both
+    # mean "run the full LLM-driven enrichment". Route those to the
+    # `run` subcommand so existing automation keeps working — but let
+    # `-h` / `--help` fall through to the top-level subcommand listing.
+    argv = sys.argv[1:]
+    known_cmds = {"run", "targets", "apply"}
+    help_flags = {"-h", "--help"}
+    if not argv:
+        argv = ["run"]
+    elif argv[0] not in known_cmds and argv[0] not in help_flags:
+        argv = ["run"] + argv
+
     parser = argparse.ArgumentParser(prog="library.enrichment",
                                      description="L2 enrichment over Issues + Notes")
-    parser.add_argument(
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_run = sub.add_parser("run",
+                           help="Full LLM-driven enrichment (default).")
+    p_run.add_argument(
         "--prune-stale", action="store_true",
         help="Mark Issues as 'stale' when they were previously extracted "
-             "from a Note but no longer appear in the current re-extraction. "
-             "Off by default — turn on once you're sure your LLM produces "
-             "stable enough action-item titles for your notes.",
+             "from a Note but no longer appear in the current re-extraction.",
     )
-    args = parser.parse_args()
-    stats = enrich(prune_stale=args.prune_stale)
-    print(f"[enrichment] {stats}")
+
+    p_targets = sub.add_parser(
+        "targets",
+        help="Print Issues and Notes that need enrichment as JSON. "
+             "Used by the /enrich skill so Claude Code itself can do the "
+             "extraction without an API key.",
+    )
+    p_targets.add_argument(
+        "--all", action="store_true",
+        help="Include items already enriched (default skips them).",
+    )
+
+    p_apply = sub.add_parser(
+        "apply",
+        help="Apply pre-computed enrichment results from a JSON file. "
+             "Inverse of `targets`: results in, edges out.",
+    )
+    p_apply.add_argument("--from", dest="from_file", required=True,
+                         help="Path to the results JSON.")
+    p_apply.add_argument("--extracted-by", default="claude-code-skill",
+                         help="Provenance label written onto every edge.")
+    p_apply.add_argument("--prune-stale", action="store_true")
+
+    args = parser.parse_args(argv)
+
+    if args.cmd == "run":
+        stats = enrich(prune_stale=args.prune_stale)
+        print(f"[enrichment] {stats}")
+    elif args.cmd == "targets":
+        targets = list_targets(new_only=not args.all)
+        json.dump(targets, sys.stdout, ensure_ascii=False, indent=2)
+        sys.stdout.write("\n")
+    elif args.cmd == "apply":
+        with open(args.from_file) as f:
+            payload = json.load(f)
+        stats = apply_results(
+            payload,
+            extracted_by=args.extracted_by,
+            prune_stale=args.prune_stale,
+        )
+        print(f"[enrichment.apply] {stats}")
 
 
 if __name__ == "__main__":
