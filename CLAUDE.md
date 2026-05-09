@@ -25,14 +25,49 @@ All skills live in `.claude/commands/<name>.md`. Claude Code picks them
 up automatically when the cwd is this repo or a workspace (workspaces
 get symlinks at create time — see `scripts/new-workspace.sh`).
 
+### Lifecycle
+
 | Skill | Purpose | When to use |
 |-------|---------|-------------|
 | [`ws-config`](./.claude/commands/ws-config.md) | Workspace lifecycle — create / switch / configure sources / status | Setting up a new context, adding data sources, or checking workspace health |
+| [`add-command`](./.claude/commands/add-command.md) | Scaffold a new skill or skill bundle | When a recurring procedure deserves its own command |
+
+### Session orientation & state
+
+| Skill | Purpose | When to use |
+|-------|---------|-------------|
 | [`briefing`](./.claude/commands/briefing.md) | Session-start summary (open issues, PRs, blockers) | Begin of session, or when re-orienting mid-session |
 | [`act`](./.claude/commands/act.md) | Assess + prioritize → pick the next item | After `/briefing`, when deciding what to work on |
-| [`search`](./.claude/commands/search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
 | [`monitor`](./.claude/commands/monitor.md) | Event timeline (open/close/title/status) + replay cursor | After `/briefing`, or to inspect what changed |
+| [`search`](./.claude/commands/search.md) | Local FTS over Issue / PR bodies | Find a ticket by phrase, look up prior context |
+| [`save`](./.claude/commands/save.md) | End-of-session: reflect learnings into workspace static files | When durable knowledge surfaced this session |
+| [`checkpoint`](./.claude/commands/checkpoint.md) | Mid-session snapshot of dashboard + projects | Before context compaction or laptop switch |
+
+### Capture & tracking
+
+| Skill | Purpose | When to use |
+|-------|---------|-------------|
+| [`idea`](./.claude/commands/idea.md) | Capture / refine / promote proto-tasks (proactive) | When a future improvement comes up in passing |
+| [`note`](./.claude/commands/note.md) | Append a quick log bullet to `notes.md` | Quick log entries that don't need lifecycle |
+| [`action-item`](./.claude/commands/action-item.md) | CRUD over `dashboard.yaml` action_items | This-week TODOs surfaced via `/briefing` |
+| [`meeting-note`](./.claude/commands/meeting-note.md) | Surface and summarize ingested Gemini meeting notes | After a meeting, to extract decisions / action items |
 | [`runbooks`](./.claude/commands/runbooks.md) | Self-reinforcing recipes — pattern → steps with promote/demote | After resolving a recurring event by hand |
+
+### Pull request review
+
+| Skill | Purpose | When to use |
+|-------|---------|-------------|
+| [`check-review`](./.claude/commands/check-review.md) | PR briefing + classify + route | "내 PR 어떻게 됐지?" |
+| [`apply-review`](./.claude/commands/apply-review.md) | End-to-end: collect comments → analyze → fix → reply | Reviewer asked for code changes |
+| [`reply-pr`](./.claude/commands/reply-pr.md) | Lightweight: reply only, no code change | Already applied / answering a question |
+
+### Infrastructure
+
+| Skill | Purpose | When to use |
+|-------|---------|-------------|
+| [`infra`](./.claude/commands/infra.md) | Preload workspace infrastructure context | Before `/debug` or `/code-infra`, when intent is clear |
+| [`debug`](./.claude/commands/debug.md) | Incident investigation against prior runbooks / postmortems | On-call / outage / unfamiliar error |
+| [`code-infra`](./.claude/commands/code-infra.md) | Implement infra code (Terraform / k8s) with workspace anchors | Writing infra code, not investigating |
 
 ## Code
 
