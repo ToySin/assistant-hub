@@ -7,16 +7,20 @@ By default each source pulls only items updated since its last
 recorded sync (see library.sync_state). Pass --full to ignore that
 state and re-fetch everything.
 
-Source `sync()` calls run in parallel by default — they are I/O-bound
-(API calls, filesystem walks) and independent. Pass --sequential to
-fall back to the old in-order behavior (useful when debugging a
-specific source or when the embedded DB is overwhelmed).
+Source `sync()` calls run sequentially by default. Embedded SurrealKV
+treats concurrent writers from the same process as separate revisions
+of the same store, so heavy parallel writes (e.g. Jira ingestion of
+hundreds of issues during the same run as Confluence pages) hit
+"Invalid revision" errors. Pass `--parallel` for I/O-bound runs that
+won't write much, or wait for the per-source fetch/load split that
+will let us parallelize fetches while serializing loads through one
+shared connection.
 
 Usage:
-    python -m library.sources.run                  # delta sync, all enabled sources, parallel
+    python -m library.sources.run                  # delta sync, all enabled sources, sequential
     python -m library.sources.run --source jira    # one source only
     python -m library.sources.run --full           # full re-sync (ignore sync_state)
-    python -m library.sources.run --sequential     # one source at a time
+    python -m library.sources.run --parallel       # opt in (writes-light runs only)
     python -m library.sources.run --dry-run        # config check, no DB writes
 """
 
@@ -54,10 +58,13 @@ def main() -> None:
                         help="Resolve config but do not open the DB or write anything.")
     parser.add_argument("--full", action="store_true",
                         help="Ignore sync_state and re-fetch everything.")
-    parser.add_argument("--sequential", action="store_true",
-                        help="Run sources one at a time instead of in parallel.")
+    parser.add_argument("--parallel", action="store_true",
+                        help="Run sources concurrently. Off by default — embedded "
+                             "SurrealKV serializes writes per-process and concurrent "
+                             "ETLs trip 'Invalid revision' errors. Safe for "
+                             "writes-light runs (e.g. single-source debug).")
     parser.add_argument("--max-workers", type=int, default=8,
-                        help="Maximum parallel sources (default: 8).")
+                        help="Maximum parallel sources when --parallel is on (default: 8).")
     args = parser.parse_args()
 
     enabled = source_config.load()
@@ -85,10 +92,10 @@ def main() -> None:
             continue
         runnable.append((source, fn))
 
-    if args.sequential or len(runnable) == 1:
-        failures = _run_sequential(runnable, args.full)
-    else:
+    if args.parallel and len(runnable) > 1:
         failures = _run_parallel(runnable, args.full, args.max_workers)
+    else:
+        failures = _run_sequential(runnable, args.full)
 
     if failures:
         sys.exit(1)

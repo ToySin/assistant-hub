@@ -42,33 +42,39 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
     repos = settings.get("repos") or []
     if not repos:
         raise ValueError("github: at least one repo (owner/repo) is required")
-    state = "all"
+    pr_scope = settings.get("scope") or "me"
+    if pr_scope not in ("me", "all"):
+        raise ValueError(f"github: scope must be 'me' or 'all', got {pr_scope!r}")
+    # me-scope defaults to open (current work); all-scope keeps history.
+    state = settings.get("state") or ("open" if pr_scope == "me" else "all")
     include_drafts = bool(settings.get("include_drafts"))
     limit = int(settings.get("limit") or 100)
     full = bool(settings.get("full"))
 
     stats = SyncStats()
+    cache_scope = lambda repo: f"{repo}:{pr_scope}:{state}"
     if len(repos) <= 1:
         for repo in repos:
-            since = None if full else sync_state.get(SOURCE_NAME, scope=repo)
+            since = None if full else sync_state.get(SOURCE_NAME, scope=cache_scope(repo))
             started = sync_state.now_iso()
-            prs = _fetch_prs(repo, state=state, limit=limit, since=since)
+            prs = _fetch_prs(repo, scope=pr_scope, state=state, limit=limit, since=since)
             stats = _merge_stats(stats, _load_prs(db, repo, prs, include_drafts))
-            sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
+            sync_state.set_(SOURCE_NAME, scope=cache_scope(repo), ts=started)
         return stats
 
     # Parallel fetch, serialized load — same pattern as github_issues.
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     plan = [(repo,
-             None if full else sync_state.get(SOURCE_NAME, scope=repo),
+             None if full else sync_state.get(SOURCE_NAME, scope=cache_scope(repo)),
              sync_state.now_iso())
             for repo in repos]
 
     fetched: list[tuple[str, str, list[dict]]] = []
     with ThreadPoolExecutor(max_workers=min(8, len(repos))) as pool:
         futures = {
-            pool.submit(_fetch_prs, repo, state=state, limit=limit, since=since):
+            pool.submit(_fetch_prs, repo, scope=pr_scope, state=state,
+                        limit=limit, since=since):
                 (repo, started)
             for repo, since, started in plan
         }
@@ -80,19 +86,57 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
                 print(f"[github] {repo} fetch failed: {exc}")
     for repo, started, prs in fetched:
         stats = _merge_stats(stats, _load_prs(db, repo, prs, include_drafts))
-        sync_state.set_(SOURCE_NAME, scope=repo, ts=started)
+        sync_state.set_(SOURCE_NAME, scope=cache_scope(repo), ts=started)
     return stats
 
 
-def _fetch_prs(repo: str, *, state: str, limit: int,
+# `gh search prs` supports a richer JSON shape than `gh pr list` and lets
+# us combine repo + author/review-requested filters in one query.
+_SEARCH_FIELDS = "number,title,body,state,isDraft,author,url"
+_LIST_FIELDS = "number,title,body,state,isDraft,author,url,headRefName"
+
+
+def _fetch_prs(repo: str, *, scope: str, state: str, limit: int,
                since: str | None = None) -> list[dict]:
-    fields = "number,title,body,state,isDraft,author,url,headRefName"
+    if scope == "me":
+        return _fetch_prs_me(repo, state=state, limit=limit, since=since)
+    return _fetch_prs_all(repo, state=state, limit=limit, since=since)
+
+
+def _fetch_prs_me(repo: str, *, state: str, limit: int,
+                  since: str | None) -> list[dict]:
+    """Pull PRs the user authored or was asked to review. Two queries
+    against `gh search prs`, then dedupe by URL."""
+    common = [
+        "gh", "search", "prs",
+        "--repo", repo,
+        "--limit", str(limit),
+        "--json", _SEARCH_FIELDS,
+    ]
+    # `gh search prs --state` accepts open/closed only — omit for "all".
+    if state and state != "all":
+        common += ["--state", state]
+    if since:
+        # gh search has no since flag — go through the raw query.
+        common += [f"updated:>={since[:10]}"]
+
+    seen: dict[str, dict] = {}
+    for who_flag in (["--author", "@me"], ["--review-requested", "@me"]):
+        cmd = common + who_flag
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        for pr in json.loads(res.stdout) or []:
+            seen[pr["url"]] = pr
+    return list(seen.values())
+
+
+def _fetch_prs_all(repo: str, *, state: str, limit: int,
+                   since: str | None) -> list[dict]:
     cmd = [
         "gh", "pr", "list",
         "--repo", repo,
         "--state", state,
         "--limit", str(limit),
-        "--json", fields,
+        "--json", _LIST_FIELDS,
     ]
     if since:
         cmd.extend(["--search", f"updated:>={since[:10]}"])

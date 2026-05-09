@@ -44,10 +44,12 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
         raise ValueError("jira: JIRA_EMAIL not set in .env")
 
     project_keys = settings.get("project_keys") or []
-    base_jql = settings.get("jql") or _default_jql(project_keys)
+    issue_scope = settings.get("scope") or "me"
+    base_jql = settings.get("jql") or _default_jql(project_keys, scope=issue_scope)
     full = bool(settings.get("full"))
 
-    scope = ",".join(sorted(project_keys)) or "_all"
+    # `scope` here = sync_state cache key, distinct from `issue_scope`.
+    scope = f"{','.join(sorted(project_keys)) or '_all'}:{issue_scope}"
     since = None if full else sync_state.get(SOURCE_NAME, scope=scope)
     started = sync_state.now_iso()
 
@@ -58,13 +60,37 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
     return stats
 
 
-def _default_jql(project_keys: list[str]) -> str:
+ME_CLAUSE = (
+    "(assignee = currentUser() "
+    "OR reporter = currentUser() "
+    "OR watcher = currentUser())"
+)
+
+
+def _default_jql(project_keys: list[str], scope: str = "me") -> str:
+    """Build a default JQL.
+
+    `scope`:
+      - "me"  (default): only issues this user is involved in
+        (assignee / reporter / watcher). Intersects with project_keys
+        when given. This is what hub does — keeps the graph focused
+        on the operator's actual work.
+      - "all": every issue in the listed projects. Use only when you
+        explicitly want the whole project's history (analytics, search).
+    """
+    if scope not in ("me", "all"):
+        raise ValueError(f"jira: scope must be 'me' or 'all', got {scope!r}")
+
     if not project_keys:
-        return DEFAULT_JQL
+        return ME_CLAUSE if scope == "me" else "ORDER BY updated DESC"
+
     # Quote each key — JQL parser otherwise confuses bare keys like 'IN'
     # with the IN operator.
     keys = ",".join(f'"{k}"' for k in project_keys)
-    return f"project in ({keys})"
+    project_clause = f"project in ({keys})"
+    if scope == "me":
+        return f"{project_clause} AND {ME_CLAUSE}"
+    return project_clause
 
 
 def _add_delta(jql: str, since: str | None) -> str:

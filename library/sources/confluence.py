@@ -52,6 +52,11 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
         raise ValueError("confluence: base_url is required")
     spaces = settings.get("spaces") or []
     page_ids = settings.get("page_ids") or []
+    # Page IDs to skip even when otherwise reachable via `spaces` — useful
+    # when a single page contains content the workspace must not ingest
+    # (leaked secrets, reviewer-flagged sensitive material). Coerce to
+    # str so YAML int/str variants both match.
+    exclude_page_ids = {str(p) for p in (settings.get("exclude_page_ids") or [])}
     if not spaces and not page_ids:
         raise ValueError(
             "confluence: at least one of `spaces` or `page_ids` is required"
@@ -74,9 +79,15 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
 
     for space_key in spaces:
         for page in _list_space_pages(base_url, auth_pair, space_key, since):
+            if str(page.get("id")) in exclude_page_ids:
+                stats.skipped += 1
+                continue
             _ingest(db, base_url, page, stats, docs)
 
     for page_id in page_ids:
+        if str(page_id) in exclude_page_ids:
+            stats.skipped += 1
+            continue
         page = _get_page(base_url, auth_pair, page_id)
         if page is None:
             continue
