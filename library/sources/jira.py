@@ -61,8 +61,10 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
 def _default_jql(project_keys: list[str]) -> str:
     if not project_keys:
         return DEFAULT_JQL
-    keys = ",".join(project_keys)
-    return f"project IN ({keys})"
+    # Quote each key — JQL parser otherwise confuses bare keys like 'IN'
+    # with the IN operator.
+    keys = ",".join(f'"{k}"' for k in project_keys)
+    return f"project in ({keys})"
 
 
 def _add_delta(jql: str, since: str | None) -> str:
@@ -83,26 +85,30 @@ def _add_delta(jql: str, since: str | None) -> str:
 
 
 def _fetch_issues(base_url: str, email: str, token: str, jql: str) -> list[dict]:
-    url = f"{base_url}/rest/api/3/search"
+    """Atlassian deprecated /rest/api/3/search in early 2025 (returns 410).
+    The replacement is /rest/api/3/search/jql with token-based pagination —
+    no `total`, just `nextPageToken` until `isLast` is true."""
+    url = f"{base_url}/rest/api/3/search/jql"
     auth = (email, token)
     headers = {"Accept": "application/json"}
     out: list[dict] = []
-    start_at = 0
+    next_token: str | None = None
     while True:
-        params = {
+        params: dict = {
             "jql": jql,
             "fields": DEFAULT_FIELDS,
-            "startAt": start_at,
             "maxResults": PAGE_SIZE,
         }
+        if next_token:
+            params["nextPageToken"] = next_token
         r = requests.get(url, params=params, auth=auth, headers=headers, timeout=30)
         r.raise_for_status()
         body = r.json()
         page = body.get("issues") or []
         out.extend(page)
-        if len(out) >= body.get("total", 0) or not page:
+        next_token = body.get("nextPageToken")
+        if body.get("isLast") or not next_token or not page:
             break
-        start_at += len(page)
     return out
 
 
