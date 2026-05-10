@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 from contextlib import contextmanager
@@ -64,11 +65,18 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE INDEX IF NOT EXISTS idx_docs_source ON documents(source);
 CREATE INDEX IF NOT EXISTS idx_docs_updated ON documents(updated_at DESC);
 
+-- trigram tokenizer (SQLite 3.34+): each input is split into overlapping
+-- 3-character n-grams. Unlike `unicode61` it doesn't try to detect word
+-- boundaries — which is exactly what we want for CJK content. Korean
+-- "통합" tokenizes as ["통합" plus surrounding characters as trigrams]
+-- so a search for "통합" matches the literal sequence, not individual
+-- syllables. Latin queries also still work; trigram falls back to
+-- substring matching so "API" still hits.
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
     title, body, author,
     content=documents,
     content_rowid=id,
-    tokenize='unicode61 remove_diacritics 2'
+    tokenize='trigram'
 );
 
 CREATE TRIGGER IF NOT EXISTS docs_ai AFTER INSERT ON documents BEGIN
@@ -90,9 +98,41 @@ END;
 """
 
 
+_EXPECTED_TOKENIZER = "trigram"
+
+
 def init(workspace: str | None = None) -> None:
     with _conn(workspace) as conn:
         conn.executescript(_SCHEMA)
+        _migrate_tokenizer(conn)
+
+
+def _migrate_tokenizer(conn) -> None:
+    """If documents_fts was created with a different tokenizer than the
+    current schema declares (e.g. an older db on disk used unicode61),
+    drop and recreate the FTS table + repopulate from `documents`.
+    Idempotent — fast no-op when already correct."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type='table' AND name='documents_fts';"
+    ).fetchone()
+    if not row or row[0] is None:
+        return
+    if _EXPECTED_TOKENIZER in row[0]:
+        return  # already on the right tokenizer
+
+    print(f"[search] migrating documents_fts → {_EXPECTED_TOKENIZER}")
+    conn.executescript("""
+        DROP TABLE IF EXISTS documents_fts;
+        CREATE VIRTUAL TABLE documents_fts USING fts5(
+            title, body, author,
+            content=documents,
+            content_rowid=id,
+            tokenize='trigram'
+        );
+        INSERT INTO documents_fts(rowid, title, body, author)
+        SELECT id, title, body, author FROM documents;
+    """)
 
 
 def upsert_documents(docs: Iterable[dict], workspace: str | None = None) -> int:
@@ -138,8 +178,17 @@ def search(query: str, source: str | None = None, limit: int = 20,
     """Return matching documents ordered by FTS5 bm25 rank.
 
     `query` accepts FTS5 syntax (phrase searches with quotes, AND/OR,
-    prefix `word*`). Bare words match across title/body/author."""
+    prefix `word*`). Bare words match across title/body/author.
+
+    For short CJK queries (any token < 3 chars and all-CJK), the
+    trigram tokenizer can't match — falls back to a LIKE scan on
+    title/body. Slower but the only way to find e.g. "통합" or "권한".
+    """
     init(workspace)
+
+    if _needs_like_fallback(query):
+        return _like_search(query, source, limit, workspace)
+
     sql = """
         SELECT d.id, d.source, d.external_id, d.title, d.body,
                d.author, d.url, d.updated_at, f.rank
@@ -152,6 +201,46 @@ def search(query: str, source: str | None = None, limit: int = 20,
         sql += " AND d.source = ?"
         params.append(source)
     sql += " ORDER BY f.rank LIMIT ?"
+    params.append(limit)
+    with _conn(workspace) as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+_CJK_RE = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
+
+
+def _needs_like_fallback(query: str) -> bool:
+    """True when any whitespace-separated token in the query is short
+    AND all-CJK — trigram FTS can't match those."""
+    for tok in query.split():
+        if len(tok) < 3 and tok and all(_CJK_RE.fullmatch(c) for c in tok):
+            return True
+    return False
+
+
+def _like_search(query: str, source: str | None, limit: int,
+                 workspace: str | None) -> list[dict]:
+    """Substring scan on title+body when FTS can't help. Each whitespace-
+    separated token must appear somewhere (AND across tokens). No
+    ranking; id DESC proxies "more recent first"."""
+    tokens = [t for t in query.split() if t]
+    if not tokens:
+        return []
+    where_parts = []
+    params: list = []
+    for tok in tokens:
+        where_parts.append("(title LIKE ? OR body LIKE ?)")
+        pattern = f"%{tok}%"
+        params.extend([pattern, pattern])
+    sql = (
+        "SELECT id, source, external_id, title, body, "
+        "       author, url, updated_at, NULL AS rank "
+        "FROM documents WHERE " + " AND ".join(where_parts)
+    )
+    if source:
+        sql += " AND source = ?"
+        params.append(source)
+    sql += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
     with _conn(workspace) as conn:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
@@ -199,7 +288,8 @@ def main() -> int:
             print("(no matches)")
             return 0
         for r in results:
-            print(f"[{r['source']}] {r['external_id']}  rank={r['rank']:.3f}")
+            rank_str = f"{r['rank']:.3f}" if r["rank"] is not None else "n/a (LIKE)"
+            print(f"[{r['source']}] {r['external_id']}  rank={rank_str}")
             if r['title']:
                 print(f"  {r['title']}")
             snippet = (r['body'] or "")[:160].replace("\n", " ")
