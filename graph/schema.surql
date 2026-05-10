@@ -73,5 +73,19 @@ DEFINE TABLE IF NOT EXISTS extracted_from TYPE RELATION FROM Issue TO Note SCHEM
 DEFINE FIELD IF NOT EXISTS confidence   ON extracted_from TYPE float;
 DEFINE FIELD IF NOT EXISTS extracted_by ON extracted_from TYPE string;
 
+-- Inline cross-references found in Note bodies (regex-driven, deterministic).
+-- A note that mentions `SYS-123` produces `Note -> references_issue -> Issue:jira_sys_123`,
+-- creating an Issue stub via ensure_issue if it hasn't been ingested yet.
+-- PR refs (#42 / owner/repo#42) similarly create references_pr edges.
+DEFINE TABLE IF NOT EXISTS references_issue TYPE RELATION FROM Note TO Issue    SCHEMAFULL;
+DEFINE TABLE IF NOT EXISTS references_pr    TYPE RELATION FROM Note TO GitHubPR SCHEMAFULL;
+
+-- Emergent people mentions in Note bodies (L2-driven, less deterministic).
+-- `mentions_person` carries provenance because the LLM may misidentify.
+DEFINE TABLE IF NOT EXISTS mentions_person  TYPE RELATION FROM Note TO Person   SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS confidence   ON mentions_person TYPE float;
+DEFINE FIELD IF NOT EXISTS extracted_by ON mentions_person TYPE string;
+DEFINE FIELD IF NOT EXISTS role_hint    ON mentions_person TYPE option<string>;
+
 DEFINE INDEX IF NOT EXISTS issue_embedding_hnsw ON Issue
     FIELDS embedding HNSW DIMENSION 8 DIST COSINE TYPE F32;

@@ -193,7 +193,7 @@ def _ingest(
     modified_at = _modified(page)
     url = _page_url(base_url, page)
 
-    builder.upsert_note(
+    note_id = builder.upsert_note(
         db,
         source=SOURCE_NAME,
         path=page_id,
@@ -201,6 +201,7 @@ def _ingest(
         body=body,
         modified_at=modified_at,
     )
+    builder.link_note_references(db, note_id, body)
     stats.pages += 1
     docs.append({
         "source": SOURCE_NAME,

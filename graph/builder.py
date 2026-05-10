@@ -133,6 +133,29 @@ def upsert_github_pr(db: Surreal, uid: str, title: str, state: str) -> RecordID:
     return _first_id(res)
 
 
+def ensure_github_pr(db: Surreal, uid: str) -> RecordID:
+    """Return id of an existing GitHubPR, or create a stub if none exists.
+
+    Mirrors `ensure_issue`: used when a PR is referenced before its body
+    has been fetched (e.g. a markdown note that mentions `owner/repo#42`).
+    Doesn't overwrite real data."""
+    existing = db.query(
+        "SELECT id FROM type::thing('GitHubPR', $uid);", {"uid": uid},
+    )
+    found = _maybe_id(existing)
+    if found is not None:
+        return found
+    res = db.query(
+        """
+        CREATE type::thing('GitHubPR', $uid)
+        SET uid = $uid, title = '(stub)', state = 'unknown'
+        RETURN id;
+        """,
+        {"uid": uid},
+    )
+    return _first_id(res)
+
+
 def upsert_project(db: Surreal, key: str, name: str) -> RecordID:
     res = db.query(
         """
@@ -188,6 +211,38 @@ def upsert_concept(db: Surreal, name: str) -> RecordID:
         {"slug": slug, "name": name},
     )
     return _first_id(res)
+
+
+def link_note_references(
+    db: Surreal, note_id: RecordID, body: str | None,
+    default_pr_repo: str | None = None,
+) -> tuple[int, int]:
+    """Scan a note's body for Jira keys and GitHub PR refs and create
+    `references_issue` / `references_pr` edges accordingly. Targets are
+    upserted as stubs via ensure_issue / ensure_github_pr if they aren't
+    already in the graph.
+
+    Returns (jira_count, pr_count). Safe to call on every ETL run —
+    edges are idempotent via relate().
+    """
+    from graph.link_extractor import extract_jira_keys, extract_pr_refs
+
+    jira_count = 0
+    pr_count = 0
+    if not body:
+        return (jira_count, pr_count)
+
+    for key in extract_jira_keys(body):
+        issue_id = ensure_issue(db, source="jira", external_key=key)
+        relate(db, note_id, "references_issue", issue_id)
+        jira_count += 1
+
+    for ref in extract_pr_refs(body, default_repo=default_pr_repo or ""):
+        pr_id = ensure_github_pr(db, uid=ref)
+        relate(db, note_id, "references_pr", pr_id)
+        pr_count += 1
+
+    return (jira_count, pr_count)
 
 
 def relate(

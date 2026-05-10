@@ -17,6 +17,7 @@ NODE_TABLES = ("Person", "Issue", "GitHubPR", "Project", "Concept", "Note")
 EDGE_TABLES = (
     "assigned_to", "authored", "implements",
     "belongs_to", "blocked_by", "mentions", "extracted_from",
+    "references_issue", "references_pr", "mentions_person",
 )
 
 

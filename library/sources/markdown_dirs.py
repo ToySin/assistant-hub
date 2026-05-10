@@ -69,7 +69,7 @@ def sync(db: Surreal, settings: dict, auth: str | None) -> SyncStats:
                 print(f"[markdown_dirs] skip {file_path}: {exc}")
                 stats.skipped += 1
                 continue
-            builder.upsert_note(
+            note_id = builder.upsert_note(
                 db,
                 source=SOURCE_NAME,
                 path=str(file_path),
@@ -77,6 +77,10 @@ def sync(db: Surreal, settings: dict, auth: str | None) -> SyncStats:
                 body=body,
                 modified_at=mtime_iso,
             )
+            # Wire inline Jira / PR refs in the note's body into
+            # references_issue / references_pr edges so /briefing
+            # can show "<note> -> SYS-123" connections without an LLM.
+            builder.link_note_references(db, note_id, body)
             stats.notes += 1
             docs.append({
                 "source": SOURCE_NAME,

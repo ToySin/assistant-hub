@@ -69,6 +69,13 @@ Return a JSON object:
       "status": "open" | "done",
       "confidence": <0.0-1.0>
     }}
+  ],
+  "people": [
+    {{
+      "name": "<display name as written in the note>",
+      "role_hint": "<one short phrase if context implies a role, else omit>",
+      "confidence": <0.0-1.0>
+    }}
   ]
 }}
 
@@ -85,9 +92,17 @@ NOT action items:
 - Observations or notes-to-self that aren't asks
 - Items already completed and clearly archived (unless an explicit `- [x]`)
 
-If the note has no clear action items, return an empty list. Same for concepts.
+People rules — identify named individuals mentioned in the note. Typical
+shapes: authors quoted ("Bob said …"), addressees ("ask Dongbin about …"),
+PR/issue assignees, meeting attendees. Use the form the note writes
+(full name if given, otherwise the first name). `role_hint` is optional
+and brief (e.g. "PR author", "blocker", "mentor", "reviewer"); omit when
+the note gives no role context. SKIP generic roles ("the team",
+"engineering", "@channel") — only named humans.
 
-Return ONLY the JSON object. No prose, no code fences.
+If the note has no clear concepts / action items / people, return an
+empty list for that field. Return ONLY the JSON object. No prose, no
+code fences.
 """
 
 
@@ -97,6 +112,7 @@ class Stats:
     notes_processed: int = 0
     concepts_extracted: int = 0
     action_items_extracted: int = 0
+    people_extracted: int = 0
     edges_created: int = 0
     stale_marked: int = 0
     errors: list[str] = field(default_factory=list)
@@ -223,6 +239,9 @@ def apply_results(
             stats.action_items_extracted += 1
             stats.edges_created += 1
 
+        _attach_people(db, note_id, note_payload.get("people") or [],
+                       extracted_by, stats)
+
         if prune_stale:
             stats.stale_marked += _mark_stale(db, note_id, new_keys)
         stats.notes_processed += 1
@@ -330,8 +349,35 @@ def _enrich_notes(
             stats.action_items_extracted += 1
             stats.edges_created += 1
 
+        _attach_people(db, note["id"], payload.get("people") or [],
+                       extracted_by, stats)
+
         if prune_stale:
             stats.stale_marked += _mark_stale(db, note["id"], new_keys)
+
+
+def _attach_people(
+    db, note_id, people: list[dict], extracted_by: str, stats: Stats,
+) -> None:
+    """Link each named person mentioned in a note's body to a Person node
+    (upserted via stable slug) with a `mentions_person` edge. `role_hint`
+    is optional and skipped if blank — the schema has it as
+    `option<string>` so None / missing is fine."""
+    for person in people:
+        name = (person.get("name") or "").strip()
+        if not name:
+            continue
+        person_id = builder.upsert_person(db, name)
+        props = {
+            "confidence": float(person.get("confidence", 0.7)),
+            "extracted_by": extracted_by,
+        }
+        role_hint = (person.get("role_hint") or "").strip()
+        if role_hint:
+            props["role_hint"] = role_hint
+        builder.relate(db, note_id, "mentions_person", person_id, **props)
+        stats.people_extracted += 1
+        stats.edges_created += 1
 
 
 def _mark_stale(db, note_id, current_keys: set[str]) -> int:
