@@ -154,10 +154,26 @@ If everything passes, proceed to Step 8. If any failure:
 
 The user picks. If they fix and want re-probe, re-run validate.
 
-## 8. Wrap up
+## 8. Bootstrap dashboard.yaml from detected sources
+
+```bash
+python -m library.dashboard bootstrap
+```
+
+This appends one entry per Jira project_key / GitHub repo / Confluence
+space to `dashboard.yaml`'s `projects:` list. Idempotent — only adds
+new entries, never overwrites hand-edited ones. focus / blockers /
+action_items stay empty (those belong to the user; `/checkpoint` and
+`/action-item` populate them later).
+
+If the user already configured `dashboard.yaml.projects` by hand, this
+is a no-op (or near-no-op).
+
+## 9. Wrap up
 
 > ✓ `<workspace>/sources.yaml` 갱신됨
 > ✓ N개 source 검증 통과 (또는 M개 통과 / K개 보류)
+> ✓ `<workspace>/dashboard.yaml` projects 시드 (N개)
 >
 > 다음 단계:
 > 1. ETL 실행: `python -m library.sources.run`
