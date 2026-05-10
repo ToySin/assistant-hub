@@ -87,7 +87,8 @@ def format_text(b: Briefing) -> str:
         if len(b.recent_events) > 15:
             lines.append(f"- ... +{len(b.recent_events) - 15} more")
         lines.append("")
-        lines.append("(Run `python -m library.monitor mark-replayed` once digested.)")
+        lines.append("(Cursor auto-advances on briefing exit. "
+                     "Use `--keep-cursor` to disable, `--no-timeline` to skip this section.)")
         lines.append("")
 
     focus = b.dashboard.get("focus") or []
@@ -142,11 +143,25 @@ def format_text(b: Briefing) -> str:
 
 
 def main() -> None:
-    workspace = None
-    if len(sys.argv) > 1 and sys.argv[1] == "--workspace":
-        workspace = sys.argv[2]
-    b = collect(workspace)
+    import argparse
+    parser = argparse.ArgumentParser(description="Workspace session-start briefing.")
+    parser.add_argument("--workspace", help="Override active workspace.")
+    parser.add_argument("--no-timeline", action="store_true",
+                        help="Suppress the 'Since last replay' section.")
+    parser.add_argument("--keep-cursor", action="store_true",
+                        help="Don't advance the replay cursor — useful when "
+                             "rendering the briefing twice in a row.")
+    args = parser.parse_args()
+
+    b = collect(args.workspace)
+    if args.no_timeline:
+        b.recent_events = []
     print(format_text(b))
+
+    # Auto-advance the cursor once the briefing is rendered. The user has
+    # now seen the timeline; nagging them on next run is the bug F2 fixed.
+    if not args.keep_cursor and b.recent_events:
+        monitor.mark_replayed(args.workspace)
 
 
 if __name__ == "__main__":
