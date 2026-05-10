@@ -128,11 +128,37 @@ Render the YAML changes as a unified diff. Wait for explicit y/n.
 
 If `n`, ask which part to revise and loop. If `y`, write the file.
 
-## 7. Wrap up
+## 7. Validate auth + connectivity (probe each enabled source)
+
+After the user confirms the env-var setup is done (or wants to proceed
+even with some missing), run the smoke probe so the first ETL doesn't
+surface 6 different breakages 30 minutes in:
+
+```bash
+python -m library.sources.validate
+```
+
+The probe:
+- Hits each source's auth endpoint with one minimal call
+- Returns `[OK]` or `[FAIL]` per source with a specific actionable
+  error (not "something went wrong"). Examples of what it catches:
+  jira 401 with bad token, confluence 404 on missing space key, gh
+  CLI not authenticated, gcloud ADC missing drive scope, markdown
+  paths that don't exist.
+
+If everything passes, proceed to Step 8. If any failure:
+
+> [FAIL] gdrive_gemini: Drive API returned 403...
+>
+> 이 부분 고치고 진행하실래요, 아니면 일단 그대로 두고 다른 source ETL만 돌릴까요?
+
+The user picks. If they fix and want re-probe, re-run validate.
+
+## 8. Wrap up
 
 > ✓ `<workspace>/sources.yaml` 갱신됨
+> ✓ N개 source 검증 통과 (또는 M개 통과 / K개 보류)
 >
 > 다음 단계:
-> 1. `<workspace>/.env`에 위 환경변수 추가
-> 2. ETL 실행: `python -m library.sources.run`
-> 3. (선택) L2 enrichment: `python -m library.enrichment`
+> 1. ETL 실행: `python -m library.sources.run`
+> 2. (선택) L2 enrichment: `python -m library.enrichment`
