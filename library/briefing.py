@@ -41,12 +41,16 @@ def collect(workspace: str | None = None) -> Briefing:
     # locales / custom workflows). Skip stubs (undefined) — those are
     # cross-references from PRs we haven't fetched bodies for, not
     # actionable. Skip done. Keep new + indeterminate.
+    # Sort 'indeterminate' (in progress / in review) above 'new' (backlog)
+    # so actionable rows surface first — works out alphabetically since
+    # 'i' < 'n'. Within a bucket, fall back to source + external_key for
+    # stable ordering.
     issue_rows = db.query(
         "SELECT source, external_key, title, status, status_category, "
         "->extracted_from->Note.title AS source_note_titles "
         "FROM Issue "
         "WHERE status_category IN ['new', 'indeterminate'] "
-        "ORDER BY source, external_key;"
+        "ORDER BY status_category, source, external_key;"
     )
 
     pr_rows = db.query(

@@ -35,7 +35,8 @@ class Recommendation:
     external_key: str
     title: str
     status: str
-    priority: str        # P0 / P1 / P2 / P3
+    status_category: str = "undefined"  # 'new'|'indeterminate'|'done'|'undefined'
+    priority: str = "P3"  # P0 / P1 / P2 / P3
     reasons: list[str] = field(default_factory=list)
     source_note: str | None = None    # for source='note', the originating Note's title
 
@@ -81,12 +82,20 @@ def assess(workspace: str | None = None) -> Assessment:
             external_key=row.get("external_key") or "?",
             title=row.get("title") or "",
             status=row.get("status") or "",
+            status_category=row.get("status_category") or "undefined",
             priority=priority,
             reasons=reasons,
             source_note=pick_source_note(row),
         ))
 
-    recs.sort(key=lambda r: (PRIORITY_ORDER[r.priority], r.external_key))
+    # Within same priority, surface 'indeterminate' (in progress) above
+    # 'new' (backlog) so what's actually moving sorts to the top.
+    STATUS_CAT_ORDER = {"indeterminate": 0, "new": 1, "done": 2, "undefined": 3}
+    recs.sort(key=lambda r: (
+        PRIORITY_ORDER[r.priority],
+        STATUS_CAT_ORDER.get(r.status_category, 99),
+        r.external_key,
+    ))
 
     workspace_name = workspace or _infer_workspace_name()
     return Assessment(
