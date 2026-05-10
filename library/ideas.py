@@ -71,8 +71,19 @@ def _write(path: Path, front: dict, body: str) -> None:
 # Capture
 # -----------------------------------------------------------------------------
 
-def capture(text: str, *, title: str | None = None, workspace: str | None = None) -> Path:
-    """Write a new idea markdown file. Returns its path."""
+def capture(
+    text: str,
+    *,
+    title: str | None = None,
+    slug: str | None = None,
+    workspace: str | None = None,
+) -> Path:
+    """Write a new idea markdown file. Returns its path.
+
+    `slug` lets the caller supply the filename component independently
+    of `title`. Useful for non-Latin titles (e.g. Korean) where the
+    auto-derived slug would collapse to "idea".
+    """
     text = text.strip()
     if not text:
         raise ValueError("capture: empty text")
@@ -82,14 +93,16 @@ def capture(text: str, *, title: str | None = None, workspace: str | None = None
         if len(title) > 80:
             title = title[:77] + "..."
 
+    file_slug = _slug(slug) if slug else _slug(title)
+
     out_dir = ideas_dir(workspace)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{_today_prefix()}-{_slug(title)}.md"
+    path = out_dir / f"{_today_prefix()}-{file_slug}.md"
 
     n = 1
     while path.exists():
         n += 1
-        path = out_dir / f"{_today_prefix()}-{_slug(title)}-{n}.md"
+        path = out_dir / f"{_today_prefix()}-{file_slug}-{n}.md"
 
     front = {
         "title": title,
@@ -263,6 +276,7 @@ def main() -> None:
     cap = sub.add_parser("capture", help="Write a new idea markdown file.")
     cap.add_argument("text", help="Freeform idea text.")
     cap.add_argument("--title", help="Optional explicit title.")
+    cap.add_argument("--slug", help="Optional explicit filename slug (useful for non-Latin titles).")
 
     prm = sub.add_parser("promote", help="Open a GitHub issue from an idea.")
     prm.add_argument("slug", help="Idea slug, filename, or absolute path.")
@@ -273,7 +287,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.cmd == "capture":
-        path = capture(args.text, title=args.title)
+        path = capture(args.text, title=args.title, slug=args.slug)
         print(path)
     elif args.cmd == "promote":
         url = promote(args.slug, repo=args.repo)

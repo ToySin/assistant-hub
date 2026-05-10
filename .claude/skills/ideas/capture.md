@@ -17,6 +17,13 @@ title and slug. It prints the path of the new markdown file.
 
 If the user volunteered a title, pass `--title "<title>"` too.
 
+For non-Latin titles (e.g. Korean), the auto-derived slug collapses to
+"idea". Always pass `--slug "<english-kebab-case>"` derived from the
+2–4 most concept-bearing words, so filenames stay distinguishable —
+e.g. `--slug calendar-integration` for "세션을 캘린더에 연동".
+The frontmatter `title` stays in the user's language; only the
+filename uses the English slug.
+
 ### Step 2. Refresh the graph (best-effort)
 
 If the workspace has `markdown_dirs` enabled with `notes/ideas/` (or a
