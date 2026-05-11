@@ -1,0 +1,28 @@
+# Service inventory — {{WORKSPACE_NAME}}
+#
+# Each entry describes one deployable unit. /infra, /debug, and
+# /code-infra skills read this to anchor infrastructure context.
+# Replace the placeholder entries with real services.
+#
+# Required fields: name, repo
+# Optional:        owner, env, deploy, infra_notes
+
+services:
+  - name: example-api
+    repo: org/example-api
+    owner: team-platform
+    env:
+      staging: https://api.staging.example.com
+      prod:    https://api.example.com
+    deploy:
+      tool: helm
+      chart: charts/example-api
+      values_path: deploy/values-prod.yaml
+    infra_notes: |
+      GKE cluster: prod-us-central1
+      Namespace: api
+      HPA: min 2 / max 10, CPU 70%
+
+  # - name: worker
+  #   repo: org/worker
+  #   ...

@@ -1,0 +1,27 @@
+# Deploy reference — {{WORKSPACE_NAME}}
+#
+# Ordered deploy sequence and environment config.
+# /code-infra reads this when writing Terraform / k8s / Helm changes.
+
+environments:
+  staging:
+    gcp_project: ""       # e.g. my-project-staging
+    region: ""
+    k8s_cluster: ""
+    domain: ""
+
+  prod:
+    gcp_project: ""
+    region: ""
+    k8s_cluster: ""
+    domain: ""
+
+# Deploy order (services that must deploy before others)
+deploy_order: []
+# - example-api
+# - worker
+
+# Infrastructure repositories
+infra_repos: []
+# - org/infra-terraform
+# - org/k8s-manifests
