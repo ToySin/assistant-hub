@@ -134,3 +134,105 @@ def project_overview(db: Surreal) -> list[ProjectView]:
             pr_uids=pr_uids,
         ))
     return result
+
+
+@dataclass
+class StakeholderView:
+    name: str
+    assigned_issues: list[dict] = field(default_factory=list)
+    authored_prs: list[dict] = field(default_factory=list)
+
+
+def stakeholders(db: Surreal, name: str) -> StakeholderView:
+    """Find open issues assigned to `name` and PRs authored by them.
+
+    Used by /act Step 3 context enrichment to understand who is involved
+    in a work item and what else they're working on.
+    """
+    person_rows = db.query(
+        "SELECT id FROM Person WHERE name = $name LIMIT 1;",
+        {"name": name},
+    )
+    person_id = (person_rows[0].get("id") if person_rows else None)
+    if not person_id:
+        return StakeholderView(name=name)
+
+    issue_rows = db.query(
+        """
+        SELECT source, external_key, title, status, status_category
+        FROM Issue
+        WHERE <-assigned_to<-Person.id CONTAINS $pid
+          AND status_category IN ['new', 'indeterminate'];
+        """,
+        {"pid": person_id},
+    )
+    pr_rows = db.query(
+        """
+        SELECT uid, title, state FROM GitHubPR
+        WHERE <-authored<-Person.id CONTAINS $pid AND state = 'open';
+        """,
+        {"pid": person_id},
+    )
+    return StakeholderView(
+        name=name,
+        assigned_issues=list(issue_rows or []),
+        authored_prs=list(pr_rows or []),
+    )
+
+
+@dataclass
+class TraceNode:
+    source: str
+    external_key: str
+    title: str
+    status: str
+    blocked_by: list[str] = field(default_factory=list)
+    blocks: list[str] = field(default_factory=list)
+    prs: list[str] = field(default_factory=list)
+
+
+def trace(db: Surreal, external_key: str, depth: int = 2) -> list[TraceNode]:
+    """Return the subgraph fan-out around `external_key` up to `depth` hops.
+
+    Walks blocked_by in both directions and collects implementing PRs.
+    Used by /act Step 3 to load all context around a specific issue before
+    taking action (e.g. understanding the full blocker chain).
+    """
+    visited: set[str] = set()
+    result: list[TraceNode] = []
+    _trace_recurse(db, external_key, depth, visited, result)
+    return result
+
+
+def _trace_recurse(
+    db: Surreal, key: str, depth: int,
+    visited: set[str], result: list[TraceNode],
+) -> None:
+    if depth < 0 or key in visited:
+        return
+    visited.add(key)
+    rows = db.query(
+        """
+        SELECT source, external_key, title, status,
+               ->blocked_by->Issue.external_key AS blocked_by,
+               <-blocked_by<-Issue.external_key AS blocks,
+               <-implements<-GitHubPR.uid        AS prs
+        FROM Issue WHERE external_key = $key LIMIT 1;
+        """,
+        {"key": key},
+    )
+    if not (rows or []):
+        return
+    row = rows[0]
+    node = TraceNode(
+        source=row.get("source") or "?",
+        external_key=row.get("external_key") or key,
+        title=row.get("title") or "",
+        status=row.get("status") or "",
+        blocked_by=[k for k in (row.get("blocked_by") or []) if k],
+        blocks=[k for k in (row.get("blocks") or []) if k],
+        prs=[u for u in (row.get("prs") or []) if u],
+    )
+    result.append(node)
+    for neighbor in node.blocked_by + node.blocks:
+        _trace_recurse(db, neighbor, depth - 1, visited, result)
