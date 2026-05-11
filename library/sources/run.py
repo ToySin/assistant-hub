@@ -40,6 +40,7 @@ from library.sources import gdrive_gemini as gdrive_gemini_source
 from library.sources import markdown_dirs as markdown_dirs_source
 from library.sources import gcal as gcal_source
 from library.sources import github_notifications as gh_notifs_source
+from library.sources import linear as linear_source
 from library.sources import notion as notion_source
 
 DISPATCH = {
@@ -52,6 +53,7 @@ DISPATCH = {
     "confluence": confluence_source.sync,
     "gcal": gcal_source.sync,
     "github_notifications": gh_notifs_source.sync,
+    "linear": linear_source.sync,
 }
 
 
