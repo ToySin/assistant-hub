@@ -32,6 +32,7 @@ get symlinks at create time — see `scripts/new-workspace.sh`).
 |-------|---------|-------------|
 | [`ws-config`](./.claude/commands/ws-config.md) | Workspace lifecycle — create / switch / configure sources / status | Setting up a new context, adding data sources, or checking workspace health |
 | [`add-command`](./.claude/commands/add-command.md) | Scaffold a new skill or skill bundle | When a recurring procedure deserves its own command |
+| [`create-issue`](./.claude/commands/create-issue.md) | Create a Jira / Linear / GitHub issue from within a session | Capturing a task that needs to land in the tracker immediately |
 
 ### Session orientation & state
 
@@ -102,6 +103,7 @@ get symlinks at create time — see `scripts/new-workspace.sh`).
 | `scripts/hooks/{pre-commit,pre-push}` | Block secrets / `.env` from being committed or pushed |
 | `scripts/sync-session.sh` | Snapshot Claude Code session jsonl into the workspace `sessions/` |
 | `scripts/restore-session.sh` | On a fresh laptop, copy the workspace's session jsonl back so `claude --resume` works |
+| `scripts/auto-sync.sh` | Claude Code Stop hook — exports graph to jsonl and commits (no push). Wire via `settings.json` `hooks.Stop`. |
 
 ## Common workflows
 
