@@ -42,6 +42,7 @@ from library.sources import gcal as gcal_source
 from library.sources import github_notifications as gh_notifs_source
 from library.sources import linear as linear_source
 from library.sources import notion as notion_source
+from library.sources import gmail as gmail_source
 from library.sources import slack as slack_source
 
 DISPATCH = {
@@ -56,6 +57,7 @@ DISPATCH = {
     "github_notifications": gh_notifs_source.sync,
     "linear": linear_source.sync,
     "slack": slack_source.sync,
+    "gmail": gmail_source.sync,
 }
 
 
