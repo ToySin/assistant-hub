@@ -29,7 +29,9 @@ python -m library.act
 
 This prints buckets P0 (unblockers — do first), P1 (in flight —
 finish), P2 (open backlog), P3 (blocked — wait), with a short reason
-under each item.
+under each item. It also prints an **Orphan issues** section: open
+issues with no PR, not blocking/blocked — these are stuck in backlog
+and need a decision (close, defer, or start a PR).
 
 ### Step 3. Add the recommendation
 
@@ -44,6 +46,8 @@ The python module gives the buckets. Your job is to **pick one**:
   used.
 - If only P3 remains: explain what would unblock and propose surfacing
   it to the blocker's owner.
+- If there's a large orphan list: propose a backlog pruning pass
+  (mark done / defer / assign PRs) before picking new work.
 
 Keep it tight: one recommendation, one sentence on why, optionally a
 "runner-up if you prefer X" line.

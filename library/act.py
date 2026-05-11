@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass, field
 
 from graph import builder
-from library import monitor, runbooks
+from library import graph_queries, monitor, runbooks
 from library.issue_format import format_issue_line, pick_source_note
 
 PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
@@ -56,6 +56,7 @@ class Assessment:
     workspace: str
     recommendations: list[Recommendation]
     proposals: list[RunbookProposal] = field(default_factory=list)
+    dead_issues: list[graph_queries.DeadIssue] = field(default_factory=list)
 
 
 def assess(workspace: str | None = None) -> Assessment:
@@ -102,6 +103,7 @@ def assess(workspace: str | None = None) -> Assessment:
         workspace=workspace_name,
         recommendations=recs,
         proposals=_runbook_proposals(workspace),
+        dead_issues=graph_queries.dead_issues(db),
     )
 
 
@@ -177,6 +179,15 @@ def format_text(a: Assessment) -> str:
             ))
             for reason in rec.reasons:
                 lines.append(f"    {reason}")
+        lines.append("")
+
+    if a.dead_issues:
+        lines.append(f"## Orphan issues ({len(a.dead_issues)} — no PR, not blocking/blocked)")
+        for d in a.dead_issues[:10]:
+            lines.append(f"- [{d.source}] {d.external_key}: {d.title} ({d.status})")
+        if len(a.dead_issues) > 10:
+            lines.append(f"- ... +{len(a.dead_issues) - 10} more")
+        lines.append("  → These are stuck in backlog. Consider: close, defer, or assign a PR.")
         lines.append("")
 
     if a.proposals:
