@@ -246,14 +246,85 @@ def execute_auto_proposals(a: Assessment,
     return fired
 
 
+def resolve_event(
+    event_id: int,
+    outcome: str,
+    note: str = "",
+    workspace: str | None = None,
+) -> None:
+    """Record that event #event_id was resolved manually.
+
+    Looks for a matching runbook and calls record_outcome on it.
+    If no runbook matches and outcome is 'success', auto-creates a
+    semi-auto runbook from the event pattern so next time it's
+    surfaced automatically.
+    """
+    event = monitor.get_event(event_id, workspace=workspace)
+    if event is None:
+        print(f"[act] event #{event_id} not found.")
+        return
+
+    matched = runbooks.match_event(event, workspace=workspace)
+    rb_id: int | None = None
+
+    if matched:
+        rb = matched[0]
+        runbooks.record_outcome(rb.id, outcome, workspace=workspace)
+        rb_id = rb.id
+        print(f"[act] recorded '{outcome}' on runbook #{rb.id} '{rb.name}'.")
+    elif outcome == "success":
+        pattern = {"kind": event["kind"], "source": event["source"]}
+        name = f"auto: {event['kind']} on {event['source']}"
+        try:
+            rb = runbooks.create(
+                name=name,
+                pattern=pattern,
+                steps=[],
+                created_from_event_id=event_id,
+                automation_level="semi-auto",
+                workspace=workspace,
+            )
+            rb_id = rb.id
+            print(f"[act] created runbook #{rb.id} '{rb.name}' (semi-auto) "
+                  f"from event #{event_id}.")
+        except runbooks.DuplicatePatternError as e:
+            rb_id = e.existing.id
+            runbooks.record_outcome(rb_id, "success", workspace=workspace)
+            print(f"[act] existing runbook #{rb_id} matched — recorded success.")
+    else:
+        print(f"[act] no matching runbook for event #{event_id}. Nothing recorded.")
+
+    ok = monitor.mark_resolved(event_id, note=note, runbook_id=rb_id,
+                               workspace=workspace)
+    if ok:
+        print(f"[act] event #{event_id} marked resolved.")
+    monitor.emit(
+        "act", "resolution", f"event.resolved.{outcome}",
+        f"event#{event_id}",
+        {"event_id": event_id, "runbook_id": rb_id, "note": note},
+        workspace=workspace,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="library.act",
                                      description="prioritize + optionally fire runbooks")
     parser.add_argument("--execute", action="store_true",
                         help="Run AUTO-level runbook proposals (state-changing).")
+    parser.add_argument("--resolve", type=int, metavar="EVENT_ID",
+                        help="Mark event #N as manually resolved and update runbook stats.")
+    parser.add_argument("--outcome", choices=["success", "fail"], default="success",
+                        help="Resolution outcome (default: success). Used with --resolve.")
+    parser.add_argument("--note", default="",
+                        help="Free-text note to attach to the resolution.")
+    parser.add_argument("--workspace", help="Override active workspace.")
     args = parser.parse_args()
 
-    a = assess()
+    if args.resolve is not None:
+        resolve_event(args.resolve, args.outcome, args.note, args.workspace)
+        return
+
+    a = assess(workspace=args.workspace)
     print(format_text(a))
     if args.execute:
         fired = execute_auto_proposals(a)

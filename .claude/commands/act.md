@@ -62,7 +62,29 @@ If the user confirms, begin the actual work:
 - Default to making changes in `assistant-hub/` core unless the work
   is workspace-specific.
 
-### Step 5. (When applicable) fire AUTO runbooks
+### Step 5. Record the resolution
+
+After handling an event manually, close the loop so the system learns:
+
+```bash
+# Mark event resolved (outcome defaults to 'success')
+python -m library.act --resolve <event_id>
+
+# If the fix failed or was only partial
+python -m library.act --resolve <event_id> --outcome fail
+
+# With a note (stored on the resolution record)
+python -m library.act --resolve <event_id> --note "squash-merged, fixed in PR #42"
+```
+
+What happens:
+- If a runbook already matches the event → `record_outcome` is called, which may **promote** the runbook's automation level (manual → semi-auto → auto after enough successes).
+- If no runbook matches and outcome is `success` → a new **semi-auto** runbook is auto-created from the event pattern. Next time this kind+source fires, it will be surfaced as a proposal.
+- The event row is marked `status=resolved` and disappears from future `/briefing` and `/act` replay sections.
+
+This is the self-reinforcing loop: manual work surfaces patterns; patterns become proposals; proposals become automations.
+
+### Step 6. (When applicable) fire AUTO runbooks
 
 `/act` reads recent monitor events (since-last-replay) and matches
 them against `/runbooks`. The output ends with a "Runbook proposals"

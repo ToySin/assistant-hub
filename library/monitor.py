@@ -53,10 +53,13 @@ CREATE TABLE IF NOT EXISTS events (
     scope       TEXT NOT NULL,
     kind        TEXT NOT NULL,
     subject_key TEXT NOT NULL,
-    payload     TEXT NOT NULL DEFAULT '{}'
+    payload     TEXT NOT NULL DEFAULT '{}',
+    status      TEXT NOT NULL DEFAULT 'new',
+    resolution  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts      ON events(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_events_subject ON events(source, subject_key);
+CREATE INDEX IF NOT EXISTS idx_events_status  ON events(status);
 
 CREATE TABLE IF NOT EXISTS markers (
     name TEXT PRIMARY KEY,
@@ -64,10 +67,22 @@ CREATE TABLE IF NOT EXISTS markers (
 );
 """
 
+_MIGRATIONS = [
+    "ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'new'",
+    "ALTER TABLE events ADD COLUMN resolution TEXT",
+]
+
 
 def init(workspace: str | None = None) -> None:
     with _conn(workspace) as conn:
         conn.executescript(_SCHEMA)
+        # Idempotent column migrations for existing DBs created before
+        # the status/resolution columns were added.
+        for sql in _MIGRATIONS:
+            try:
+                conn.execute(sql)
+            except Exception:  # noqa: BLE001
+                pass  # column already exists
 
 
 def emit(source: str, scope: str, kind: str, subject_key: str,
@@ -147,13 +162,44 @@ def timeline(since: str | None = None, limit: int = 50,
 
 def since_last_replay(limit: int = 50,
                       workspace: str | None = None) -> list[dict]:
+    """Events since the last replay cursor, excluding already-resolved ones."""
     init(workspace)
     with _conn(workspace) as conn:
         row = conn.execute(
             "SELECT ts FROM markers WHERE name = 'last_replay'"
         ).fetchone()
         marker = row["ts"] if row else None
-    return timeline(since=marker, limit=limit, workspace=workspace)
+    rows = timeline(since=marker, limit=limit, workspace=workspace)
+    return [r for r in rows if r.get("status") != "resolved"]
+
+
+def get_event(event_id: int, workspace: str | None = None) -> dict | None:
+    init(workspace)
+    with _conn(workspace) as conn:
+        row = conn.execute("SELECT * FROM events WHERE id = ?",
+                           (event_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def mark_resolved(
+    event_id: int,
+    note: str = "",
+    runbook_id: int | None = None,
+    workspace: str | None = None,
+) -> bool:
+    """Mark a single event as resolved, recording an optional note and
+    the runbook that handled it (if any). Returns True if the row was
+    found and updated."""
+    init(workspace)
+    resolution = json.dumps(
+        {"note": note, "runbook_id": runbook_id}, ensure_ascii=False
+    )
+    with _conn(workspace) as conn:
+        cur = conn.execute(
+            "UPDATE events SET status = 'resolved', resolution = ? WHERE id = ?",
+            (resolution, event_id),
+        )
+    return cur.rowcount > 0
 
 
 def mark_replayed(workspace: str | None = None) -> None:
