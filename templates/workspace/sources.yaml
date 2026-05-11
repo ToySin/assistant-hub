@@ -41,6 +41,14 @@ sources:
     enabled: false
     paths: []                # absolute paths on disk
 
+  # === Notifications ===
+  github_notifications:
+    enabled: false
+    # No auth_env — uses `gh` CLI auth (gh auth login).
+    participating_only: true  # only threads the user participated in
+    all: true                 # include already-read notifications
+    since_days: 7             # lookback window for initial / full sync
+
   # === Communication ===
   slack:
     enabled: false
