@@ -19,15 +19,13 @@ Settings (workspace `sources.yaml`):
 
 from __future__ import annotations
 
-import shlex
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import requests
 from surrealdb import Surreal
 
-from library import search, sync_state
+from library import _gauth, search, sync_state
 
 SOURCE_NAME = "gdrive_gemini"
 
@@ -51,11 +49,7 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
     max_files = int(settings.get("max_files") or 50)
     full = bool(settings.get("full"))
 
-    token, project = _gcloud_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "x-goog-user-project": project,
-    }
+    headers = _gauth.headers(auth)
 
     scope_key = ",".join(sorted(folder_ids)) or "_all"
     since_iso = None if full else sync_state.get(SOURCE_NAME, scope=scope_key)
@@ -88,30 +82,6 @@ def sync(db: Surreal, settings: dict, auth: str | None = None) -> SyncStats:
         stats.indexed = len(docs)
     sync_state.set_(SOURCE_NAME, scope=scope_key, ts=started)
     return stats
-
-
-def _gcloud_token() -> tuple[str, str]:
-    """Pull a fresh ADC bearer token plus the active project. Errors out
-    cleanly if gcloud isn't installed or `gcloud auth application-default
-    login` was never run."""
-    try:
-        token = subprocess.check_output(
-            shlex.split("gcloud auth application-default print-access-token"),
-            stderr=subprocess.PIPE, text=True,
-        ).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-        raise RuntimeError(
-            "gdrive_gemini: gcloud ADC token unavailable. "
-            "Run `gcloud auth application-default login` once."
-        ) from exc
-    try:
-        project = subprocess.check_output(
-            shlex.split("gcloud config get-value project"),
-            stderr=subprocess.PIPE, text=True,
-        ).strip()
-    except subprocess.CalledProcessError:
-        project = ""
-    return token, project
 
 
 def _list_files(headers: dict, name_filter: str, modified_after: str,

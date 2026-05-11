@@ -245,6 +245,35 @@ def link_note_references(
     return (jira_count, pr_count)
 
 
+def delete_note(db: Surreal, source: str, path: str) -> None:
+    """Delete a Note and all its outgoing/incoming edges.
+
+    Used by ETL adapters when a source-side deletion is detected (e.g.
+    a cancelled calendar event or a deleted Slack message).
+    """
+    thing_id = _note_thing_id(source, path)
+    db.query(
+        "DELETE type::thing('Note', $thing_id);",
+        {"thing_id": thing_id},
+    )
+
+
+def relate_participation(
+    db: Surreal,
+    person_id: RecordID,
+    note_id: RecordID,
+    role: str | None = None,
+) -> None:
+    """Create a `participated_in` edge from a Person to a Note.
+
+    Used for structured participation metadata from API sources (calendar
+    attendees, Slack thread members, Gmail recipients) — more reliable
+    than LLM-inferred `mentions_person` edges.
+    """
+    props = {"role": role} if role else {}
+    relate(db, person_id, "participated_in", note_id, **props)
+
+
 def relate(
     db: Surreal,
     src: RecordID,

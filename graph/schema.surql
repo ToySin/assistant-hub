@@ -87,5 +87,12 @@ DEFINE FIELD IF NOT EXISTS confidence   ON mentions_person TYPE float;
 DEFINE FIELD IF NOT EXISTS extracted_by ON mentions_person TYPE string;
 DEFINE FIELD IF NOT EXISTS role_hint    ON mentions_person TYPE option<string>;
 
+-- Participation: structured attendee/sender/thread_member links from
+-- calendar events (gcal), Slack threads, and Gmail threads. More
+-- deterministic than mentions_person because it comes from API metadata,
+-- not LLM inference.
+DEFINE TABLE IF NOT EXISTS participated_in TYPE RELATION FROM Person TO Note SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS role ON participated_in TYPE option<string>;  -- "attendee" | "sender" | "thread_member"
+
 DEFINE INDEX IF NOT EXISTS issue_embedding_hnsw ON Issue
     FIELDS embedding HNSW DIMENSION 8 DIST COSINE TYPE F32;

@@ -29,6 +29,38 @@ def extract_jira_keys(text: str) -> list[str]:
     return list(seen)
 
 
+_GH_API_PULL_RE = re.compile(
+    r"https://api\.github\.com/repos/([^/]+/[^/]+)/pulls/(\d+)"
+)
+_GH_API_ISSUE_RE = re.compile(
+    r"https://api\.github\.com/repos/([^/]+/[^/]+)/issues/(\d+)"
+)
+
+
+def extract_github_api_pr_ref(url: str) -> str | None:
+    """Convert a GitHub API PR URL to an 'owner/repo#N' ref.
+
+    Used by the github_notifications adapter to link notification subjects
+    back to GitHubPR nodes without a second API call.
+    Returns None if the URL doesn't match.
+    """
+    m = _GH_API_PULL_RE.match(url or "")
+    if m:
+        return f"{m.group(1)}#{m.group(2)}"
+    return None
+
+
+def extract_github_api_issue_ref(url: str) -> tuple[str, str] | None:
+    """Convert a GitHub API issue URL to (repo, number) for ensure_issue.
+
+    Returns (owner/repo, number) or None.
+    """
+    m = _GH_API_ISSUE_RE.match(url or "")
+    if m:
+        return m.group(1), m.group(2)
+    return None
+
+
 def extract_pr_refs(text: str, default_repo: str = "") -> list[str]:
     """Return PR identifiers as 'owner/repo#number'. Skips bare '#N' refs
     when no `default_repo` is provided so we don't fabricate ambiguous IDs."""
