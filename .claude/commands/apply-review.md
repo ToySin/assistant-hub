@@ -106,19 +106,18 @@ Reply tone:
 
 ## Step 7. Record history
 
-Append to `<workspace>/review-history.yaml`:
+For each addressed comment, run:
 
-```yaml
-entries:
-  - pr: <owner>/<repo>#<n>
-    comment_id: <id>
-    intent: <classification>
-    action: applied | answered | declined
-    commit: <sha>          # for applied changes only
-    processed_at: <ISO 8601 UTC>
+```bash
+python -m library.review_history append \
+  --pr "<owner>/<repo>#<n>" \
+  --comment-id <id> \
+  --action applied   # or: reply-only, skipped
+  [--note "linked PR #42 / closed as won't-fix"]
 ```
 
-Create the file with `entries: []` if missing. Append, don't rewrite.
+This writes to `<workspace>/review-history.yaml` so `/check-review pending`
+can filter out already-handled comments on re-runs.
 
 ## Step 8. Push (optional)
 

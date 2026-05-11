@@ -87,11 +87,15 @@ remaining are unanswered. List them with:
 ## Step 5. `history` / `clear`
 
 ```bash
-HIST=$(python -c 'from library.workspace import get_workspace_path; print(get_workspace_path() / "review-history.yaml")')
+# Last 20 processed comments
+python -m library.review_history history
+
+# Wipe all history (confirm before running)
+python -m library.review_history clear
 ```
 
-`history`: print last 20 entries (date, pr, comment_id, action).
-`clear`: confirm "really wipe?" then truncate to `entries: []`.
+`pending` mode also uses `library.review_history.seen_comment_ids()` to
+filter out already-handled comments. No manual file management needed.
 
 ## Notes
 
