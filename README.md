@@ -108,6 +108,8 @@ resume mid-conversation.
 
 [`CLAUDE.md`](./CLAUDE.md) is the full index — start there if you'll be
 working in this repo with an AI agent.
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) covers the two-repo
+design, ETL→graph→skills flow, and conventions for adding new sources.
 
 ## Available skills
 

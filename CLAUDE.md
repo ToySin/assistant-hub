@@ -4,6 +4,7 @@ This file is the entry point for any agent working in this repo. It points
 at where things live and which skill to invoke for which workflow.
 
 For human-readable docs, see [README.md](./README.md).
+For architecture deep-dive, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Active workspace
 
