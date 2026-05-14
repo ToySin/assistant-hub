@@ -37,6 +37,44 @@ class Briefing:
     recent_events: list[dict] = field(default_factory=list)
 
 
+def _gh_current_user() -> str | None:
+    """Return the logged-in gh user (best-effort, cached process-wide)."""
+    import subprocess
+    try:
+        res = subprocess.run(
+            ["gh", "api", "user", "--jq", ".login"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if res.returncode == 0:
+            return res.stdout.strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _split_prs_by_author(prs: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split into (authored-by-me, review-requested-from-me).
+
+    The github source pulls PRs via `--author=@me` and `--review-requested=@me`
+    and dedupes by url. So any PR in the result set is one or the other;
+    where the user is the author, attribute it to the 'mine' bucket
+    (takes precedence over self-review-requested edge cases)."""
+    me = _gh_current_user()
+    if not me:
+        # No way to split — show everything in the 'mine' bucket so we
+        # don't silently hide work.
+        return list(prs), []
+    mine: list[dict] = []
+    review_req: list[dict] = []
+    for pr in prs:
+        authors = [a for a in (pr.get("authors") or []) if a]
+        if me in authors:
+            mine.append(pr)
+        else:
+            review_req.append(pr)
+    return mine, review_req
+
+
 def _filter_live_blockers(rows: list[dict]) -> list[dict]:
     """Drop rows where every blocker is already done. For the remainder,
     trim `blockers` to only the still-live (non-done) ones so display
@@ -74,8 +112,13 @@ def collect(workspace: str | None = None) -> Briefing:
         "ORDER BY status_category, source, external_key;"
     )
 
+    # Also pull each PR's author so we can split "PRs I authored" from
+    # "PRs I'm review-requested on". The github source pulls both via
+    # `gh search prs --author=@me` + `--review-requested=@me`, deduped;
+    # the author edge is the cleanest discriminator at display time.
     pr_rows = db.query(
-        "SELECT uid, title, state FROM GitHubPR WHERE state = 'open' ORDER BY uid;"
+        "SELECT uid, title, state, <-authored<-Person.name AS authors "
+        "FROM GitHubPR WHERE state = 'open' ORDER BY uid;"
     )
 
     # Also fetch blocker status_category so done-blockers can be filtered
@@ -203,10 +246,20 @@ def format_text(b: Briefing) -> str:
         lines.append("")
 
     if b.open_prs:
-        lines.append(f"## Open PRs ({len(b.open_prs)})")
-        for row in b.open_prs:
-            lines.append(f"- {row['uid']} ({row['state']}) — {row['title']}")
-        lines.append("")
+        mine, review_requested = _split_prs_by_author(b.open_prs)
+        if mine:
+            lines.append(f"## My open PRs ({len(mine)})")
+            for row in mine:
+                lines.append(f"- {row['uid']} ({row['state']}) — {row['title']}")
+            lines.append("")
+        if review_requested:
+            lines.append(f"## Review requested ({len(review_requested)})")
+            for row in review_requested:
+                authors = ", ".join(row.get("authors") or []) or "?"
+                lines.append(
+                    f"- {row['uid']} ({row['state']}) by {authors} — {row['title']}"
+                )
+            lines.append("")
 
     if b.blocked_chains:
         lines.append("## Blocked chains")
