@@ -65,10 +65,12 @@ def assess(workspace: str | None = None) -> Assessment:
         """
         SELECT
             source, external_key, title, status, status_category,
-            ->blocked_by->Issue.external_key AS blocked_by,
-            <-blocked_by<-Issue.external_key AS blocks,
-            <-implements<-GitHubPR.uid       AS prs,
-            ->extracted_from->Note.title     AS source_note_titles
+            ->blocked_by->Issue.external_key      AS blocked_by,
+            ->blocked_by->Issue.status_category   AS blocked_by_cats,
+            <-blocked_by<-Issue.external_key      AS blocks,
+            <-blocked_by<-Issue.status_category   AS blocks_cats,
+            <-implements<-GitHubPR.uid            AS prs,
+            ->extracted_from->Note.title          AS source_note_titles
         FROM Issue;
         """
     )
@@ -130,8 +132,21 @@ def _classify(row: dict) -> tuple[str, list[str]]:
     because unblocking cascades. Then in-flight signals (PR exists or
     status reads as in-progress/review) drop to P1. Default P2.
     """
-    blocked_by = [k for k in (row.get("blocked_by") or []) if k]
-    blocks = [k for k in (row.get("blocks") or []) if k]
+    # Pair each blocker key with its status_category so done-blockers
+    # (effectively-resolved) don't count against this issue.
+    blocked_by_all = row.get("blocked_by") or []
+    blocked_by_cats = row.get("blocked_by_cats") or []
+    blocked_by = [
+        k for k, c in zip(blocked_by_all, blocked_by_cats)
+        if k and c != "done"
+    ]
+    # Likewise: only count downstream items that aren't already done.
+    blocks_all = row.get("blocks") or []
+    blocks_cats = row.get("blocks_cats") or []
+    blocks = [
+        k for k, c in zip(blocks_all, blocks_cats)
+        if k and c != "done"
+    ]
     prs = [u for u in (row.get("prs") or []) if u]
     status = (row.get("status") or "").lower()
 

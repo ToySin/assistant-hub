@@ -59,7 +59,6 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts      ON events(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_events_subject ON events(source, subject_key);
-CREATE INDEX IF NOT EXISTS idx_events_status  ON events(status);
 
 CREATE TABLE IF NOT EXISTS markers (
     name TEXT PRIMARY KEY,
@@ -70,6 +69,13 @@ CREATE TABLE IF NOT EXISTS markers (
 _MIGRATIONS = [
     "ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'new'",
     "ALTER TABLE events ADD COLUMN resolution TEXT",
+]
+
+# Indexes that depend on columns added by migrations; create them AFTER
+# migrations have run so older DBs whose `events` table predates `status`
+# don't fail in executescript before the ALTER lands.
+_POST_MIGRATION_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)",
 ]
 
 
@@ -83,6 +89,9 @@ def init(workspace: str | None = None) -> None:
                 conn.execute(sql)
             except Exception:  # noqa: BLE001
                 pass  # column already exists
+        # Indexes depending on migrated columns — safe to run now.
+        for sql in _POST_MIGRATION_INDEXES:
+            conn.execute(sql)
 
 
 def emit(source: str, scope: str, kind: str, subject_key: str,

@@ -37,6 +37,21 @@ class Briefing:
     recent_events: list[dict] = field(default_factory=list)
 
 
+def _filter_live_blockers(rows: list[dict]) -> list[dict]:
+    """Drop rows where every blocker is already done. For the remainder,
+    trim `blockers` to only the still-live (non-done) ones so display
+    matches reality."""
+    out: list[dict] = []
+    for r in rows:
+        blockers = r.get("blockers") or []
+        cats = r.get("blocker_cats") or []
+        live = [k for k, c in zip(blockers, cats) if k and c != "done"]
+        if not live:
+            continue
+        out.append({**r, "blockers": live})
+    return out
+
+
 def collect(workspace: str | None = None) -> Briefing:
     ws_path = get_workspace_path(workspace)
     dashboard = yaml.safe_load((ws_path / "dashboard.yaml").read_text()) or {}
@@ -63,8 +78,13 @@ def collect(workspace: str | None = None) -> Briefing:
         "SELECT uid, title, state FROM GitHubPR WHERE state = 'open' ORDER BY uid;"
     )
 
+    # Also fetch blocker status_category so done-blockers can be filtered
+    # out — a chain like "PREM-1134 ← PREM-1132" is stale when 1132 is
+    # already done (1134 is effectively unblocked).
     blocked_rows = db.query(
-        "SELECT external_key, title, ->blocked_by->Issue.external_key AS blockers "
+        "SELECT external_key, title, "
+        "  ->blocked_by->Issue.external_key    AS blockers, "
+        "  ->blocked_by->Issue.status_category AS blocker_cats "
         "FROM Issue WHERE count(->blocked_by) > 0 ORDER BY external_key;"
     )
 
@@ -79,7 +99,7 @@ def collect(workspace: str | None = None) -> Briefing:
         dashboard=dashboard,
         open_issues=list(issue_rows),
         open_prs=list(pr_rows),
-        blocked_chains=[r for r in blocked_rows if r.get("blockers")],
+        blocked_chains=_filter_live_blockers(blocked_rows),
         dead_issues=graph_queries.dead_issues(db),
         project_views=graph_queries.project_overview(db),
         projects_yaml=_load_projects_yaml(ws_path),
