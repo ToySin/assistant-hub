@@ -162,19 +162,18 @@ def _probe_github_issues(settings: dict, auth: str | None) -> ProbeResult:
     return _probe_github_like(settings, "github_issues")
 
 
-def _probe_gdrive_gemini(settings: dict, auth: str | None) -> ProbeResult:
+def _probe_gdrive_like(settings: dict, auth: str | None, label: str) -> ProbeResult:
+    """Shared Drive-API probe — gdrive_gemini and gdrive_docs use the
+    same gcloud ADC path, so probe logic is identical."""
     if not shutil.which("gcloud"):
-        return ProbeResult(
-            "gdrive_gemini", False,
-            "`gcloud` not on PATH — install Google Cloud SDK",
-        )
+        return ProbeResult(label, False, "`gcloud` not on PATH — install Google Cloud SDK")
     tok = subprocess.run(
         ["gcloud", "auth", "application-default", "print-access-token"],
         capture_output=True, text=True,
     )
     if tok.returncode != 0:
         return ProbeResult(
-            "gdrive_gemini", False,
+            label, False,
             "no Application Default Credentials — run "
             "`gcloud auth application-default login --scopes=openid,"
             "https://www.googleapis.com/auth/drive.readonly,"
@@ -196,7 +195,7 @@ def _probe_gdrive_gemini(settings: dict, auth: str | None) -> ProbeResult:
     )
     if r.status_code == 403:
         return ProbeResult(
-            "gdrive_gemini", False,
+            label, False,
             "Drive API returned 403. Either Drive API isn't enabled on the "
             "active gcloud project (enable at "
             "console.cloud.google.com/apis/library/drive.googleapis.com) "
@@ -204,10 +203,16 @@ def _probe_gdrive_gemini(settings: dict, auth: str | None) -> ProbeResult:
             "the scopes flag above).",
         )
     if r.status_code != 200:
-        return ProbeResult(
-            "gdrive_gemini", False, f"HTTP {r.status_code}: {r.text[:120]}",
-        )
-    return ProbeResult("gdrive_gemini", True, "ADC + Drive API OK")
+        return ProbeResult(label, False, f"HTTP {r.status_code}: {r.text[:120]}")
+    return ProbeResult(label, True, "ADC + Drive API OK")
+
+
+def _probe_gdrive_gemini(settings: dict, auth: str | None) -> ProbeResult:
+    return _probe_gdrive_like(settings, auth, "gdrive_gemini")
+
+
+def _probe_gdrive_docs(settings: dict, auth: str | None) -> ProbeResult:
+    return _probe_gdrive_like(settings, auth, "gdrive_docs")
 
 
 def _probe_markdown_dirs(settings: dict, auth: str | None) -> ProbeResult:
@@ -230,6 +235,7 @@ PROBES = {
     "confluence": _probe_confluence,
     "github": _probe_github,
     "github_issues": _probe_github_issues,
+    "gdrive_docs": _probe_gdrive_docs,
     "gdrive_gemini": _probe_gdrive_gemini,
     "markdown_dirs": _probe_markdown_dirs,
 }

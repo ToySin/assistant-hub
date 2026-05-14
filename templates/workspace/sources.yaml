@@ -76,8 +76,12 @@ sources:
     page_ids: []
   gdrive_docs:
     enabled: false
-    auth_env: GOOGLE_OAUTH_TOKEN
-    folder_ids: []           # only docs under these folders
+    # No auth_env — uses `gcloud auth application-default` token (same
+    # as gdrive_gemini).
+    folder_ids: []           # only docs under these folders (empty = all readable)
+    mime_types: []           # empty = docs+slides+sheets (DEFAULT_MIME_TYPES)
+    days_back: 30            # initial window
+    max_files: 100           # per-run cap
   gdrive_gemini:
     enabled: false
     # No auth_env — uses `gcloud auth application-default` token.

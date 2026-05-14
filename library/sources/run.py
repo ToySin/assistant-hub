@@ -36,6 +36,7 @@ from library.sources import github as github_source
 from library.sources import github_issues as github_issues_source
 from library.sources import jira as jira_source
 from library.sources import confluence as confluence_source
+from library.sources import gdrive_docs as gdrive_docs_source
 from library.sources import gdrive_gemini as gdrive_gemini_source
 from library.sources import markdown_dirs as markdown_dirs_source
 from library.sources import gcal as gcal_source
@@ -49,6 +50,7 @@ DISPATCH = {
     "jira": jira_source.sync,
     "github": github_source.sync,
     "github_issues": github_issues_source.sync,
+    "gdrive_docs": gdrive_docs_source.sync,
     "gdrive_gemini": gdrive_gemini_source.sync,
     "markdown_dirs": markdown_dirs_source.sync,
     "notion": notion_source.sync,
