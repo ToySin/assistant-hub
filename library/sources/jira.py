@@ -34,7 +34,15 @@ class SyncStats:
     edges: int = 0
 
 
-def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
+@dataclass
+class FetchResult:
+    issues: list[dict]
+    scope: str
+    started: str
+
+
+def fetch(settings: dict, auth: str) -> FetchResult:
+    """Network-only step — no db writes. Safe to run in a thread pool."""
     base_url = (settings.get("base_url") or "").rstrip("/")
     if not base_url:
         raise ValueError("jira: base_url is required")
@@ -48,16 +56,26 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
     base_jql = settings.get("jql") or _default_jql(project_keys, scope=issue_scope)
     full = bool(settings.get("full"))
 
-    # `scope` here = sync_state cache key, distinct from `issue_scope`.
+    # `scope` is the sync_state cache key, distinct from `issue_scope`.
     scope = f"{','.join(sorted(project_keys)) or '_all'}:{issue_scope}"
     since = None if full else sync_state.get(SOURCE_NAME, scope=scope)
     started = sync_state.now_iso()
 
     jql = _add_delta(base_jql, since)
     issues = _fetch_issues(base_url, email, auth, jql)
-    stats = _load_issues(db, issues, scope=scope)
-    sync_state.set_(SOURCE_NAME, scope=scope, ts=started)
+    return FetchResult(issues=issues, scope=scope, started=started)
+
+
+def load(db: Surreal, result: FetchResult) -> SyncStats:
+    """DB-write step — single-threaded against the shared connection."""
+    stats = _load_issues(db, result.issues, scope=result.scope)
+    sync_state.set_(SOURCE_NAME, scope=result.scope, ts=result.started)
     return stats
+
+
+def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
+    """Backward-compat wrapper: fetch then load in the caller's thread."""
+    return load(db, fetch(settings, auth))
 
 
 ME_CLAUSE = (

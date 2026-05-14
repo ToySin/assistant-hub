@@ -46,16 +46,24 @@ class SyncStats:
     skipped: int = 0
 
 
-def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
+@dataclass
+class FetchResult:
+    pages: list[dict]       # raw pages already filtered (excludes + since)
+    base_url: str
+    scope: str
+    started: str
+    skipped: int            # pages dropped by filters during fetch
+
+
+def fetch(settings: dict, auth: str) -> FetchResult:
+    """Pull every reachable page (across spaces + standalone page_ids)
+    into memory, applying exclude_page_ids and the delta filter. No
+    db writes — safe to run in a thread pool."""
     base_url = (settings.get("base_url") or "").rstrip("/")
     if not base_url:
         raise ValueError("confluence: base_url is required")
     spaces = settings.get("spaces") or []
     page_ids = settings.get("page_ids") or []
-    # Page IDs to skip even when otherwise reachable via `spaces` — useful
-    # when a single page contains content the workspace must not ingest
-    # (leaked secrets, reviewer-flagged sensitive material). Coerce to
-    # str so YAML int/str variants both match.
     exclude_page_ids = {str(p) for p in (settings.get("exclude_page_ids") or [])}
     if not spaces and not page_ids:
         raise ValueError(
@@ -74,32 +82,48 @@ def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
     started = sync_state.now_iso()
 
     auth_pair = (email, auth)
-    stats = SyncStats()
-    docs: list[dict] = []
+    pages: list[dict] = []
+    skipped = 0
 
     for space_key in spaces:
         for page in _list_space_pages(base_url, auth_pair, space_key, since):
             if str(page.get("id")) in exclude_page_ids:
-                stats.skipped += 1
+                skipped += 1
                 continue
-            _ingest(db, base_url, page, stats, docs)
+            pages.append(page)
 
     for page_id in page_ids:
         if str(page_id) in exclude_page_ids:
-            stats.skipped += 1
+            skipped += 1
             continue
         page = _get_page(base_url, auth_pair, page_id)
         if page is None:
             continue
         if since and (_modified(page) <= since):
-            stats.skipped += 1
+            skipped += 1
             continue
-        _ingest(db, base_url, page, stats, docs)
+        pages.append(page)
 
+    return FetchResult(pages=pages, base_url=base_url, scope=scope,
+                       started=started, skipped=skipped)
+
+
+def load(db: Surreal, result: FetchResult) -> SyncStats:
+    """Write fetched pages into the graph + search index. Single-threaded
+    so concurrent runs don't trip SurrealKV revision errors."""
+    stats = SyncStats(skipped=result.skipped)
+    docs: list[dict] = []
+    for page in result.pages:
+        _ingest(db, result.base_url, page, stats, docs)
     if docs:
         search.upsert_documents(docs)
-    sync_state.set_(SOURCE_NAME, scope=scope, ts=started)
+    sync_state.set_(SOURCE_NAME, scope=result.scope, ts=result.started)
     return stats
+
+
+def sync(db: Surreal, settings: dict, auth: str) -> SyncStats:
+    """Backward-compat wrapper: fetch then load in the caller's thread."""
+    return load(db, fetch(settings, auth))
 
 
 # ---------- HTTP ----------

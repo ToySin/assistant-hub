@@ -46,21 +46,27 @@ from library.sources import notion as notion_source
 from library.sources import gmail as gmail_source
 from library.sources import slack as slack_source
 
-DISPATCH = {
-    "jira": jira_source.sync,
-    "github": github_source.sync,
-    "github_issues": github_issues_source.sync,
-    "gdrive_docs": gdrive_docs_source.sync,
-    "gdrive_gemini": gdrive_gemini_source.sync,
-    "markdown_dirs": markdown_dirs_source.sync,
-    "notion": notion_source.sync,
-    "confluence": confluence_source.sync,
-    "gcal": gcal_source.sync,
-    "github_notifications": gh_notifs_source.sync,
-    "linear": linear_source.sync,
-    "slack": slack_source.sync,
-    "gmail": gmail_source.sync,
+SOURCES = {
+    "jira": jira_source,
+    "github": github_source,
+    "github_issues": github_issues_source,
+    "gdrive_docs": gdrive_docs_source,
+    "gdrive_gemini": gdrive_gemini_source,
+    "markdown_dirs": markdown_dirs_source,
+    "notion": notion_source,
+    "confluence": confluence_source,
+    "gcal": gcal_source,
+    "github_notifications": gh_notifs_source,
+    "linear": linear_source,
+    "slack": slack_source,
+    "gmail": gmail_source,
 }
+
+
+def _has_split(mod) -> bool:
+    """A source supports parallel-fetch / serial-load if it exposes both
+    `fetch(settings, auth)` and `load(db, fetch_result)`."""
+    return hasattr(mod, "fetch") and hasattr(mod, "load")
 
 
 def main() -> None:
@@ -98,11 +104,11 @@ def main() -> None:
 
     runnable = []
     for source in enabled:
-        fn = DISPATCH.get(source.name)
-        if fn is None:
+        mod = SOURCES.get(source.name)
+        if mod is None:
             print(f"[run] no ETL implemented for source '{source.name}', skipping")
             continue
-        runnable.append((source, fn))
+        runnable.append((source, mod))
 
     if args.parallel and len(runnable) > 1:
         failures = _run_parallel(runnable, args.full, args.max_workers)
@@ -113,18 +119,13 @@ def main() -> None:
         sys.exit(1)
 
 
-def _run_one(source, fn, full: bool):
-    """Open a fresh DB connection in this thread and run the source's sync."""
-    db = builder.connect()
-    settings = {**source.settings, "full": full}
-    return fn(db, settings, source.auth)
-
-
 def _run_sequential(runnable, full: bool) -> int:
+    db = builder.connect()
     failures = 0
-    for source, fn in runnable:
+    for source, mod in runnable:
+        settings = {**source.settings, "full": full}
         try:
-            stats = _run_one(source, fn, full)
+            stats = mod.sync(db, settings, source.auth)
             print(f"[run] {source.name}: {stats}")
         except Exception as exc:  # noqa: BLE001
             failures += 1
@@ -133,18 +134,55 @@ def _run_sequential(runnable, full: bool) -> int:
 
 
 def _run_parallel(runnable, full: bool, max_workers: int) -> int:
+    """Parallel-fetch / serial-load for sources that expose fetch+load.
+
+    Embedded SurrealKV serializes writes per-process, so we keep loads
+    single-threaded against one shared connection. I/O — REST/CLI/Drive
+    calls — runs concurrently in a thread pool. Sources without split
+    fall back to sync() in the same serial phase.
+    """
+    split: list[tuple] = []
+    sync_only: list[tuple] = []
+    for source, mod in runnable:
+        (split if _has_split(mod) else sync_only).append((source, mod))
+
     failures = 0
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(runnable))) as pool:
-        futures = {pool.submit(_run_one, source, fn, full): source.name
-                   for source, fn in runnable}
-        for future in as_completed(futures):
-            name = futures[future]
-            try:
-                stats = future.result()
-                print(f"[run] {name}: {stats}")
-            except Exception as exc:  # noqa: BLE001
-                failures += 1
-                print(f"[run] {name} FAILED: {exc}", file=sys.stderr)
+    fetched: list[tuple] = []  # (source, mod, fetch_result)
+
+    # Phase 1 — concurrent fetch for split-capable sources.
+    if split:
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(split))) as pool:
+            futures = {}
+            for source, mod in split:
+                settings = {**source.settings, "full": full}
+                futures[pool.submit(mod.fetch, settings, source.auth)] = (source, mod)
+            for future in as_completed(futures):
+                source, mod = futures[future]
+                try:
+                    fetched.append((source, mod, future.result()))
+                except Exception as exc:  # noqa: BLE001
+                    failures += 1
+                    print(f"[run] {source.name} fetch FAILED: {exc}", file=sys.stderr)
+
+    # Phase 2 — serial load through one shared connection.
+    db = builder.connect()
+    for source, mod, result in fetched:
+        try:
+            stats = mod.load(db, result)
+            print(f"[run] {source.name}: {stats}")
+        except Exception as exc:  # noqa: BLE001
+            failures += 1
+            print(f"[run] {source.name} load FAILED: {exc}", file=sys.stderr)
+
+    # Phase 3 — sources still on the old sync() contract run serially too.
+    for source, mod in sync_only:
+        settings = {**source.settings, "full": full}
+        try:
+            stats = mod.sync(db, settings, source.auth)
+            print(f"[run] {source.name}: {stats}")
+        except Exception as exc:  # noqa: BLE001
+            failures += 1
+            print(f"[run] {source.name} FAILED: {exc}", file=sys.stderr)
     return failures
 
 
